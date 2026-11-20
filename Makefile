@@ -17,7 +17,7 @@ HDR = $(wildcard $(SRCDIR)/*.h)
 # Fichiers objets (dans build/)
 OBJ = $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.o,$(SRC))
 
-.PHONY: all clean run plot
+.PHONY: all clean run plot data
 
 all: $(TARGET)
 
@@ -32,6 +32,12 @@ $(BUILDDIR)/%.o: $(SRCDIR)/%.c $(HDR) | $(BUILDDIR)
 
 run: $(TARGET)
 	./$(TARGET)
+
+# Simulations complètes sans fenêtre (régime établi), CSV à la racine
+ITER ?= 300000
+data: $(TARGET)
+	./$(TARGET) --headless carre $(ITER)
+	./$(TARGET) --headless fractal $(ITER)
 
 plot:
 	python3 scripts/analyse.py

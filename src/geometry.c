@@ -164,15 +164,9 @@ void init_geometry(Sim *s) {
         }
     }
     
-    int rsrc = 15;
-    for (int dy = -rsrc; dy <= rsrc; dy++) {
-        for (int dx = -rsrc; dx <= rsrc; dx++) {
-            int x = cx + dx, y = cy + dy;
-            if (x >= 0 && x < GRID_SIZE && y >= 0 && y < GRID_SIZE &&
-                dx * dx + dy * dy <= rsrc * rsrc) {
-                int idx = y * GRID_SIZE + x;
-                s->T[idx] = SOURCE_TEMP;
-            }
+    for (int y = 0; y < GRID_SIZE; y++) {
+        for (int x = 0; x < GRID_SIZE; x++) {
+            if (in_source(x, y)) s->T[y * GRID_SIZE + x] = SOURCE_TEMP;
         }
     }
 }

@@ -22,6 +22,19 @@ enum { ZONE_EXT = 0, ZONE_WALL = 1, ZONE_INT = 2 };
 #define DT 0.05f
 #define ITER_PER_FRAME 80
 
+// Statistiques (et ligne CSV) toutes les STATS_EVERY itérations
+#define STATS_EVERY 400
+_Static_assert(STATS_EVERY % ITER_PER_FRAME == 0,
+               "STATS_EVERY doit être un multiple de ITER_PER_FRAME");
+
+// Source chauffante : disque centré, maintenu à SOURCE_TEMP
+#define SOURCE_RADIUS 15
+
+static inline int in_source(int x, int y) {
+    int dx = x - GRID_SIZE / 2, dy = y - GRID_SIZE / 2;
+    return dx * dx + dy * dy <= SOURCE_RADIUS * SOURCE_RADIUS;
+}
+
 typedef struct { int x, y; } Point;
 
 typedef struct {
@@ -39,7 +52,10 @@ typedef struct {
     FILE *csv;
     int recording;
     
-    float stat_avg, stat_max, stat_std;
+    // Statistiques sur l'air intérieur hors source (murs exclus)
+    float stat_avg, stat_std, stat_min;
+    // Puissance fournie par la source au dernier pas (°C·px / unité de temps)
+    float stat_power;
     
     int count_int_square;
     int count_int_fractal;

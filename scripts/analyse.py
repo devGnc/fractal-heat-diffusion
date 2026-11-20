@@ -34,17 +34,33 @@ except FileNotFoundError as e:
 
 print(f"Données lues dans : {results_dir}")
 
-plt.figure(figsize=(10, 6))
+# Les CSV récents ont une colonne P_source (puissance du radiateur) ; pas ceux de v0.
+has_power = "P_source" in df_carre and "P_source" in df_fractal
+fig, axes = plt.subplots(2 if has_power else 1, 1, figsize=(10, 9 if has_power else 6),
+                         sharex=True, squeeze=False)
+axes = axes[:, 0]
 plt.rcParams["font.size"] = 12
 
-plt.plot(df_carre["Time"], df_carre["Mean"], label="Carré (référence)", color="blue", linewidth=1.5)
-plt.plot(df_fractal["Time"], df_fractal["Mean"], label="Fractale (Koch)", color="red", linewidth=1.5)
+ax = axes[0]
+ax.plot(df_carre["Time"], df_carre["Mean"], label="Carré (référence)", color="blue", linewidth=1.5)
+ax.plot(df_fractal["Time"], df_fractal["Mean"], label="Fractale (Koch)", color="red", linewidth=1.5)
+ax.set_ylabel(r"Température moyenne $T_{moy}$ (°C)")
+ax.set_title("Comparaison diffusion thermique : fractale vs carré")
 
-plt.xlabel(r"Temps simulé $t$ (unités de grille)")
-plt.ylabel(r"Température moyenne $T_{moy}$ (°C)")
-plt.title("Comparaison diffusion thermique : fractale vs carré")
-plt.grid(True, which="both", linestyle="--", alpha=0.7)
-plt.legend()
+if has_power:
+    ax = axes[1]
+    ax.plot(df_carre["Time"], df_carre["P_source"], label="Carré (référence)", color="blue", linewidth=1.5)
+    ax.plot(df_fractal["Time"], df_fractal["P_source"], label="Fractale (Koch)", color="red", linewidth=1.5)
+    ax.set_ylabel("Puissance de la source (u.a.)")
+    # Le transitoire initial écrase l'échelle : on cadre sur le régime établi
+    tail = pd.concat([df_carre["P_source"].iloc[len(df_carre) // 10:],
+                      df_fractal["P_source"].iloc[len(df_fractal) // 10:]])
+    ax.set_ylim(0, 1.2 * tail.max())
+
+for ax in axes:
+    ax.grid(True, which="both", linestyle="--", alpha=0.7)
+    ax.legend()
+axes[-1].set_xlabel(r"Temps simulé $t$ (unités de grille)")
 
 plt.tight_layout()
 plt.show()

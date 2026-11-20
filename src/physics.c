@@ -31,8 +31,6 @@ void check_stability(Sim *s) {
 }
 
 void step_physics(Sim *s) {
-    int N = GRID_SIZE * GRID_SIZE;
-    
     for (int y = 1; y < GRID_SIZE - 1; y++) {
         for (int x = 1; x < GRID_SIZE - 1; x++) {
             int i = y * GRID_SIZE + x;
@@ -60,16 +58,20 @@ void step_physics(Sim *s) {
         }
     }
     
-    int cx = GRID_SIZE / 2, cy = GRID_SIZE / 2, rsrc = 15;
-    for (int dy = -rsrc; dy <= rsrc; dy++) {
-        for (int dx = -rsrc; dx <= rsrc; dx++) {
-            int x = cx + dx, y = cy + dy;
-            if (x >= 0 && x < GRID_SIZE && y >= 0 && y < GRID_SIZE &&
-                dx * dx + dy * dy <= rsrc * rsrc) {
-                s->Tnext[y * GRID_SIZE + x] = SOURCE_TEMP;
+    // Remise de la source à SOURCE_TEMP. L'énergie réinjectée pendant ce pas
+    // (capacité thermique 1 par pixel) donne la puissance du radiateur.
+    int r = SOURCE_RADIUS, c = GRID_SIZE / 2;
+    double injected = 0.0;
+    for (int y = c - r; y <= c + r; y++) {
+        for (int x = c - r; x <= c + r; x++) {
+            if (in_source(x, y)) {
+                int i = y * GRID_SIZE + x;
+                injected += SOURCE_TEMP - s->Tnext[i];
+                s->Tnext[i] = SOURCE_TEMP;
             }
         }
     }
+    s->stat_power = (float)(injected / DT);
     
     float *tmp = s->T;
     s->T = s->Tnext;
@@ -79,25 +81,30 @@ void step_physics(Sim *s) {
     s->sim_time += DT;
 }
 
+// Statistiques sur l'air intérieur uniquement : les murs (plus nombreux pour la
+// fractale) et la source (fixée à SOURCE_TEMP) fausseraient la comparaison.
 void compute_stats(Sim *s) {
     double sum = 0.0, sum_sq = 0.0;
-    float max_temp = -1e6;
+    float min_temp = 1e6f;
     int count = 0;
     
-    for (int i = 0; i < GRID_SIZE * GRID_SIZE; i++) {
-        if (s->zones[i] == ZONE_INT || s->zones[i] == ZONE_WALL) {
-            float t = s->T[i];
+    for (int y = 0; y < GRID_SIZE; y++) {
+        for (int x = 0; x < GRID_SIZE; x++) {
+            int i = y * GRID_SIZE + x;
+            if (s->zones[i] != ZONE_INT || in_source(x, y)) continue;
+            double t = s->T[i];
             sum += t;
             sum_sq += t * t;
-            if (t > max_temp) max_temp = t;
+            if (t < min_temp) min_temp = (float)t;
             count++;
         }
     }
     
     if (count > 0) {
-        s->stat_avg = sum / count;
-        s->stat_max = max_temp;
-        double variance = (sum_sq / count) - (s->stat_avg * s->stat_avg);
-        s->stat_std = (variance > 0) ? sqrt(variance) : 0.0;
+        double avg = sum / count;
+        double variance = sum_sq / count - avg * avg;
+        s->stat_avg = (float)avg;
+        s->stat_min = min_temp;
+        s->stat_std = (float)(variance > 0 ? sqrt(variance) : 0.0);
     }
 }
