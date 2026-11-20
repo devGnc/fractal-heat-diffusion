@@ -1,7 +1,7 @@
-# TIPE : diffusion thermique et géométries fractales
+# Diffusion thermique et géométries fractales
 
-TIPE MPI de Devrim Genc. Ce dépôt reprend la simulation de
-l'ancien dépôt GitLab du lycée (`tests/diffusion`).
+Projet de recherche personnel de Devrim Genc. Ce dépôt reprend la simulation
+de l'ancien dépôt GitLab (`tests/diffusion`).
 
 ## Problématique
 

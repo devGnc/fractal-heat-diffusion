@@ -147,7 +147,7 @@ static int run_gui(void) {
     }
 
     SDL_Window *win = SDL_CreateWindow(
-        "Diffusion Thermique - Pièce d'Air - TIPE MPI",
+        "Diffusion thermique et géométries fractales",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         WIN_SIZE, WIN_SIZE, 0
     );
@@ -163,7 +163,7 @@ static int run_gui(void) {
 
     printf("\n");
     printf("============================================\n");
-    printf("  TIPE - Diffusion thermique\n");
+    printf("  Diffusion thermique\n");
     printf("  Géométries fractales vs. classiques\n");
     printf("============================================\n\n");
 
