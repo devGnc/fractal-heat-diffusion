@@ -1,6 +1,6 @@
 # TIPE : diffusion thermique et géométries fractales
 
-TIPE MPI de Devrim Genc et Mathis Pagnier. Ce dépôt reprend la simulation de
+TIPE MPI de Devrim Genc. Ce dépôt reprend la simulation de
 l'ancien dépôt GitLab du lycée (`tests/diffusion`).
 
 ## Problématique
