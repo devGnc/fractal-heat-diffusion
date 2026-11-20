@@ -16,3 +16,12 @@ __pycache__/
 .DS_Store
 .vscode/
 .idea/
+
+# LaTeX (fichiers intermédiaires du rapport)
+docs/rapport/*.aux
+docs/rapport/*.log
+docs/rapport/*.out
+docs/rapport/*.toc
+docs/rapport/*.fls
+docs/rapport/*.fdb_latexmk
+docs/rapport/*.synctex.gz

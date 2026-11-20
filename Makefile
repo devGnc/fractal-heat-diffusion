@@ -17,7 +17,7 @@ HDR = $(wildcard $(SRCDIR)/*.h)
 # Fichiers objets (dans build/)
 OBJ = $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.o,$(SRC))
 
-.PHONY: all clean run plot data regime test
+.PHONY: all clean run plot data regime test rapport
 
 all: $(TARGET)
 
@@ -65,6 +65,10 @@ test: | $(BUILDDIR)
 	@printf "%-12s %s %4s %9s %9s %9s %9s %8s %10s %8s\n" \
 		cas s grille T_air T_exacte G_simul G_exact "err_G_%" "bilan_%" Iter
 	@for s in $(SCALES); do ./$(BUILDDIR)/test_anneau_s$$s || exit 1; done
+
+# Rapport LaTeX (docs/rapport/rapport.pdf)
+rapport:
+	cd docs/rapport && latexmk -pdf -interaction=nonstopmode -halt-on-error rapport.tex
 
 # Ne supprime que les fichiers de compilation : les CSV de résultats sont conservés.
 clean:
