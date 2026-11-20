@@ -1,0 +1,16 @@
+# Compilation
+build/
+thermalfractalsim
+*.o
+
+# CSV produits par la simulation à la racine (les déplacer dans results/ pour les versionner)
+/res_*.csv
+
+# Python
+__pycache__/
+.venv/
+
+# macOS / éditeurs
+.DS_Store
+.vscode/
+.idea/
