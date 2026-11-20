@@ -55,26 +55,38 @@ void draw_line(uint8_t *zones, Point p1, Point p2, uint8_t val) {
     }
 }
 
-void koch(uint8_t *zones, Point a, Point b, int depth) {
+static Point round_point(Vec2 v) {
+    return (Point){ (int)lround(v.x), (int)lround(v.y) };
+}
+
+// Calcul en flottants, arrondi uniquement au tracé : pas d'erreur cumulée
+// d'une profondeur à l'autre.
+void koch(uint8_t *zones, Vec2 a, Vec2 b, int depth) {
     if (depth == 0) {
-        draw_line(zones, a, b, ZONE_WALL);
+        draw_line(zones, round_point(a), round_point(b), ZONE_WALL);
         return;
     }
     
-    Point p3 = { a.x + (b.x - a.x) / 3, a.y + (b.y - a.y) / 3 };
-    Point p4 = { a.x + 2 * (b.x - a.x) / 3, a.y + 2 * (b.y - a.y) / 3 };
+    double dx = (b.x - a.x) / 3.0, dy = (b.y - a.y) / 3.0;
+    Vec2 p3 = { a.x + dx, a.y + dy };
+    Vec2 p4 = { a.x + 2.0 * dx, a.y + 2.0 * dy };
     
-    float dx = p4.x - p3.x, dy = p4.y - p3.y;
-    float ang = -M_PI / 3.0f;
-    Point tip = {
-        p3.x + (int)(dx * cos(ang) - dy * sin(ang)),
-        p3.y + (int)(dx * sin(ang) + dy * cos(ang))
+    double ang = -M_PI / 3.0;
+    Vec2 tip = {
+        p3.x + dx * cos(ang) - dy * sin(ang),
+        p3.y + dx * sin(ang) + dy * cos(ang)
     };
     
     koch(zones, a, p3, depth - 1);
     koch(zones, p3, tip, depth - 1);
     koch(zones, tip, p4, depth - 1);
     koch(zones, p4, b, depth - 1);
+}
+
+// Aire du flocon de profondeur n rapportée à celle du triangle initial :
+// A_n / A_0 = 8/5 - 3/5 · (4/9)^n
+static double koch_area_factor(int n) {
+    return 8.0 / 5.0 - 3.0 / 5.0 * pow(4.0 / 9.0, n);
 }
 
 int count_interior_pixels(uint8_t *zones) {
@@ -95,19 +107,21 @@ void init_geometry(Sim *s) {
         s->alpha[i] = 0.0f;
     }
     
+    // Rayon du cercle circonscrit au triangle du flocon de référence
+    double r_ref = GRID_SIZE / 3.5;
+    
     if (s->mode == 0) {
         int target_area = s->count_int_fractal;
         
         if (target_area == 0) {
-            float r_frac = GRID_SIZE / 3.5f;
-            float side_frac = r_frac * sqrtf(3.0f);
-            float area_triangle = (sqrtf(3.0f) / 4.0f) * side_frac * side_frac;
-            float area_koch = (8.0f / 5.0f) * area_triangle;
-            target_area = (int)area_koch;
+            double side_ref = r_ref * sqrt(3.0);
+            double area_triangle = (sqrt(3.0) / 4.0) * side_ref * side_ref;
+            target_area = (int)(koch_area_factor(KOCH_DEPTH_REF) * area_triangle);
         }
         
-        int side_square = (int)sqrtf((float)target_area);
-        int r = side_square / 2;
+        // Murs en cx ± r : l'intérieur fait (2r - 1)² pixels. On choisit r pour
+        // que cette aire soit la plus proche possible de la cible.
+        int r = (int)lround((sqrt((double)target_area) + 1.0) / 2.0);
         
         Point p1 = { cx - r, cy - r };
         Point p2 = { cx + r, cy - r };
@@ -122,27 +136,30 @@ void init_geometry(Sim *s) {
         flood_fill_safe(s->zones, cx, cy);
         s->count_int_square = count_interior_pixels(s->zones);
         
-        printf("[CARRÉ] Aire intérieure = %d pixels (target = %d, écart = %.2f%%)\n",
+        printf("[CARRÉ] Aire intérieure = %d pixels (cible = %d, écart = %+.2f%%)\n",
                s->count_int_square, target_area,
-               100.0f * (s->count_int_square - target_area) / (float)target_area);
+               100.0 * (s->count_int_square - target_area) / (double)target_area);
     }
     else {
-        float r_frac = GRID_SIZE / 3.5f;
-        float side_frac = r_frac * sqrtf(3.0f);
-        int fractal_depth = 2;
+        // Même aire théorique pour toutes les profondeurs : on agrandit le
+        // triangle de départ quand la profondeur est plus faible.
+        double r = r_ref * sqrt(koch_area_factor(KOCH_DEPTH_REF) / koch_area_factor(s->depth));
+        double side = r * sqrt(3.0);
         
-        Point p1 = { cx - (int)(side_frac / 2.0f), cy + (int)(r_frac / 2.0f) };
-        Point p2 = { cx + (int)(side_frac / 2.0f), cy + (int)(r_frac / 2.0f) };
-        Point p3 = { cx, cy - (int)r_frac };
+        // Triangle centré sur son centre de gravité (cx, cy)
+        Vec2 p1 = { cx - side / 2.0, cy + r / 2.0 };
+        Vec2 p2 = { cx + side / 2.0, cy + r / 2.0 };
+        Vec2 p3 = { cx, cy - r };
         
-        koch(s->zones, p1, p3, fractal_depth);
-        koch(s->zones, p3, p2, fractal_depth);
-        koch(s->zones, p2, p1, fractal_depth);
+        koch(s->zones, p1, p3, s->depth);
+        koch(s->zones, p3, p2, s->depth);
+        koch(s->zones, p2, p1, s->depth);
         
         flood_fill_safe(s->zones, cx, cy);
-        s->count_int_fractal = count_interior_pixels(s->zones);
+        int area = count_interior_pixels(s->zones);
+        if (s->depth == KOCH_DEPTH_REF) s->count_int_fractal = area;
         
-        printf("[FRACTALE] Aire intérieure = %d pixels\n", s->count_int_fractal);
+        printf("[KOCH %d] Aire intérieure = %d pixels\n", s->depth, area);
     }
     
     for (int y = 0; y < GRID_SIZE; y++) {
@@ -169,4 +186,6 @@ void init_geometry(Sim *s) {
             if (in_source(x, y)) s->T[y * GRID_SIZE + x] = SOURCE_TEMP;
         }
     }
+    
+    compute_conductances(s);
 }

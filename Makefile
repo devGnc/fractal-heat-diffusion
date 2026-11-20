@@ -33,14 +33,15 @@ $(BUILDDIR)/%.o: $(SRCDIR)/%.c $(HDR) | $(BUILDDIR)
 run: $(TARGET)
 	./$(TARGET)
 
-# Simulations complètes sans fenêtre (régime établi), CSV à la racine
-ITER ?= 300000
+# Simulations complètes sans fenêtre (régime établi), CSV à la racine :
+# carré iso-aire et flocons de Koch de profondeur 0 à 3 (même aire)
+GEOMETRIES = carre koch0 koch1 koch2 koch3
 data: $(TARGET)
-	./$(TARGET) --headless carre $(ITER)
-	./$(TARGET) --headless fractal $(ITER)
+	@for g in $(GEOMETRIES); do ./$(TARGET) --headless $$g $(ITER) || exit 1; done
 
 plot:
 	python3 scripts/analyse.py
+	python3 scripts/profondeur.py
 
 # Ne supprime que les fichiers de compilation : les CSV de résultats sont conservés.
 clean:

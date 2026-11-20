@@ -21,83 +21,113 @@ chaleur, différences finies, complexité.
 brew install sdl2 pkg-config      # macOS
 make                              # compile ./thermalfractalsim
 make run                          # fenêtre interactive
-make data                         # simulations complètes sans fenêtre (≈ 25 s)
-make plot                         # trace les courbes (pandas + matplotlib)
+make data                         # carré + Koch 0 à 3 sans fenêtre (≈ 15 s)
+make plot                         # courbes temporelles + étude en profondeur
 ```
 
 Mode sans fenêtre, pour obtenir des données exploitables (enregistrement dès
 l'itération 0, une ligne toutes les 400 itérations) :
 
 ```bash
-./thermalfractalsim --headless carre                 # 300 000 itérations → res_carre.csv
-./thermalfractalsim --headless fractal 100000 f.csv  # nombre d'itérations et fichier choisis
-make data ITER=200000
+./thermalfractalsim --headless carre                # 60 000 itérations → res_carre.csv
+./thermalfractalsim --headless koch3                # flocon de profondeur 3 → res_koch3.csv
+./thermalfractalsim --headless koch2 100000 f.csv   # nombre d'itérations et fichier choisis
+make data ITER=100000
 ```
+
+Géométries : `carre`, `koch0` (triangle) à `koch4`, et `fractal` (= `koch2`).
+Le résumé final affiche le **bilan d'énergie** `P_source = P_ext + P_cool`, qui
+doit boucler à mieux que 0,1 % en régime établi.
 
 | Touche | Action |
 |---|---|
 | Espace | Basculer carré ↔ fractale |
-| S | Démarrer / arrêter l'enregistrement CSV (`res_carre.csv` ou `res_fractal.csv`) ; Espace et R l'arrêtent aussi |
+| 0 à 4 | Flocon de Koch de cette profondeur |
+| S | Démarrer / arrêter l'enregistrement CSV (`res_<geometrie>.csv`) ; changer de géométrie ou R l'arrête aussi |
 | R | Réinitialiser |
 | Q | Quitter |
 
-Colonnes du CSV : `Iter,Time,Mean,Std,Min,P_source`.
+Format du CSV : une ligne de commentaire décrivant la géométrie
+(`# geometrie=koch2 profondeur=2 aire=... faces_air_mur=...`, lue avec
+`pandas.read_csv(..., comment="#")`), puis les colonnes
+`Iter,Time,Mean,Std,Min,P_source,P_ext,P_cool` :
 
 - `Mean`, `Std`, `Min` : température de l'**air intérieur**, murs et source exclus.
 - `P_source` : puissance fournie par le radiateur pour rester à 100 °C, c'est-à-dire
   l'énergie réinjectée dans la source à chaque pas divisée par Δt (°C·px par unité
-  de temps, capacité thermique 1 par pixel). En régime établi, c'est la puissance
-  perdue par la pièce.
+  de temps, capacité thermique 1 par pixel).
+- `P_ext` : puissance sortant par les faces mur/extérieur ; `P_cool` : pertes de
+  Newton. En régime établi, `P_source = P_ext + P_cool`.
 
-Les CSV de `results/v0` ont l'ancien format (`Iter,Time,Mean,Std,Max`, murs et
-source inclus dans la moyenne). Les CSV produits à la racine sont ignorés par git :
-il faut les déplacer dans `results/<version>/` pour les garder.
+Les CSV produits à la racine sont ignorés par git : il faut les déplacer dans
+`results/<version>/` pour les garder.
 
 ## Organisation
 
 ```
 src/
   thermal_diffusion.h   paramètres physiques et structure Sim
-  geometry.c            Koch récursif, Bresenham, flood fill, carré iso-aire
-  physics.c             schéma explicite (FTCS), CFL, statistiques
+  geometry.c            Koch récursif iso-aire, Bresenham, flood fill, carré iso-aire
+  physics.c             schéma conservatif, conductances des faces, CFL, statistiques, bilan
   render.c              carte de couleurs SDL
-  main.c                boucle SDL, clavier, enregistrement CSV
-scripts/analyse.py      tracé T_moy(t)
+  main.c                mode headless, boucle SDL, clavier, enregistrement CSV
+scripts/analyse.py      évolution temporelle de toutes les simulations d'un dossier
+scripts/profondeur.py   régime établi en fonction de la profondeur de Koch
 results/v0/             premiers résultats (ancien dépôt, régime non établi)
-results/v1/             mode headless, stats sur l'air, schéma encore non conservatif
+results/v1/             headless, stats sur l'air, schéma encore non conservatif
+results/v2/             schéma conservatif, carré + Koch 0 à 3
 docs/                   export GeoGebra
 ```
 
-## Modèle actuel (v0)
+## Modèle actuel (v2)
 
-- Grille 300×300, Δx = 1, Δt = 0,05, α_air = 0,20, α_mur = 0,02
-- Extérieur à 20 °C (Dirichlet), source disque de rayon 15 à 100 °C
-- Pertes de Newton faibles (`COOLING_FACTOR`)
-- Koch de profondeur 2 ; carré de même aire (approximativement)
+- Grille 300×300, Δx = 1, **Δt = 0,5**, α_air = 0,20, α_mur = 0,02 ; murs d'un pixel
+- **Schéma conservatif** (volumes finis) : chaque face a une conductance égale à la
+  moyenne harmonique des α des deux cases (deux demi-cases en série). La face
+  mur/extérieur vaut 2·α_mur : l'extérieur est un thermostat parfait à 20 °C.
+- Stabilité : Δt·Σk ≤ 1 pour chaque case (ici 0,4)
+- Source : disque de rayon 15 à 100 °C ; pertes de Newton faibles (`COOLING_FACTOR`)
+- Flocons de profondeur 0 à 3 de **même aire théorique**
+  (A_n = A_0 · (8/5 − 3/5 · (4/9)^n), le triangle de départ est mis à l'échelle) ;
+  carré iso-aire à 0,6 % près du flocon de profondeur 2
 
-`make data` (300 000 itérations ; le régime est établi dès 200 000 environ) :
+`make data` (régime établi vers t ≈ 15 000, soit 30 000 itérations) :
 
-| | Aire intérieure | Pixels de mur | T moyenne (air, hors source) | Puissance source |
-|---|---|---|---|---|
-| Fractale | 13 389 px | 698 | 37,99 °C | 77,75 |
-| Carré | 12 769 px | 456 | 41,68 °C | 73,12 |
+| | Aire (px) | Faces air/mur | T moy. air | P_source | Bilan |
+|---|---|---|---|---|---|
+| Carré | 13 689 | 468 | 45,48 °C | 66,44 | −0,06 % |
+| Koch 0 (triangle) | 13 795 | 664 | 42,90 °C | 69,48 | −0,05 % |
+| Koch 1 | 13 757 | 764 | 42,72 °C | 69,60 | −0,05 % |
+| Koch 2 | 13 771 | 960 | 41,47 °C | 71,28 | −0,05 % |
+| Koch 3 | 13 645 | 1 188 | 41,13 °C | 71,97 | −0,05 % |
+
+**Lecture.** De la profondeur 0 à 3, la surface d'échange augmente de 79 %, mais la
+puissance seulement de 3,6 %. Avec ces paramètres, la résistance thermique est
+dominée par la **conduction dans l'air immobile** entre la source et les murs, pas
+par les murs : la surface gagnée au bout des pointes de la fractale, loin de la
+source, sert peu.
+
+Test avec un air 10 fois plus diffusif (α_air = 2, Δt = 0,1, ce qui imite un air
+brassé par convection) : la puissance passe de 394 (Koch 0) à 471 (Koch 3), soit
+**+20 %**, et Koch 3 dépasse le carré (360) de **+31 %**. La conclusion dépend donc
+fortement du rapport α_air / α_mur, qu'il faut justifier physiquement.
 
 ## Limites connues et pistes
 
 1. **Objectif à préciser** : la fractale isole moins bien mais dissipe mieux
    (radiateurs, dissipateurs, façades qui évacuent la chaleur).
-2. **Iso-aire approximative** : le carré est 4,6 % plus petit que la fractale (`sqrtf` tronqué).
+2. ~~Iso-aire approximative~~ : corrigé (écart de 0,6 %, au lieu de 4,6 %).
 3. ~~Murs inclus dans la moyenne~~ : corrigé, la moyenne porte sur l'air hors source.
-4. **Schéma non conservatif** quand α varie : utiliser ∇·(α∇T) avec la moyenne
-   harmonique de α aux interfaces. Conséquence : en régime établi, T vérifie ΔT ≈ 0
-   quel que soit α, donc **les murs n'isolent pas** (T_min ≈ 20,0 °C contre le mur).
-5. ~~Régime non établi~~ dans `results/v0` : corrigé par le mode `--headless`.
-6. **CFL très large** (0,01 pour un maximum de 0,25) : Δt peut être environ 20 fois plus grand.
+4. ~~Schéma non conservatif~~ : corrigé ; le bilan d'énergie boucle à 0,05 %.
+5. ~~Régime non établi~~ : corrigé par le mode `--headless`.
+6. ~~CFL très large~~ : Δt multiplié par 10.
 7. **Unités de grille** : adimensionner ou fixer des Δx et Δt physiques.
-8. **Mesure plus parlante** : `P_source` en régime stationnaire en fonction de la
-   profondeur fractale (0, 1, 2, 3).
+8. **Paramètres physiques à justifier** : l'air immobile (α_air = 0,2) et des murs
+   d'un pixel rendent les murs peu limitants. Pistes : air brassé (α_air effectif
+   élevé ou température d'air homogène), murs plus épais, et tracer P_source en
+   fonction de la profondeur pour plusieurs rapports α_air / α_mur.
 9. **Biais de grille** : avec le stencil à 5 points, un mur oblique en escalier
-   échange sur sa longueur |Δx|+|Δy|. La fractale compte 934 faces air/mur pour un
-   périmètre géométrique d'environ 792 (+18 %), le carré 452 (exact). Ce biais ne
-   diminue pas en raffinant la grille ; comparer les profondeurs de Koch entre elles
-   l'annule (mêmes orientations 0°, 60°, 120°).
+   échange sur sa longueur |Δx|+|Δy| (flocon de profondeur 2 : 960 faces air/mur
+   pour un périmètre géométrique d'environ 792, soit +21 %). Ce biais ne diminue pas en
+   raffinant la grille. Comparer les profondeurs de Koch entre elles l'annule
+   (mêmes orientations 0°, 60°, 120°) ; la comparaison avec le carré le subit.
