@@ -29,6 +29,9 @@
 
 \newtheorem{proposition}{Proposition}
 \crefname{proposition}{proposition}{propositions}
+\theoremstyle{definition}
+\newtheorem{definition}{Définition}
+\crefname{definition}{définition}{définitions}
 \theoremstyle{remark}
 \newtheorem*{remarque}{Remarque}
 
@@ -194,12 +197,17 @@ aussi à visualiser le phénomène. La version~4 résout donc l'air sur la grill
 
 \subsection{Murs et échanges superficiels}
 
-Contre une paroi, l'air forme une couche limite où les échanges convectifs et
-radiatifs se résument par une \emph{résistance superficielle} $R_s$
-(\unit{\square\metre\kelvin\per\watt}). La norme ISO~6946 donne, pour un flux
-horizontal, $\Rsi = \num{0,13}$ côté intérieur et $\Rse = \num{0,04}$ côté
-extérieur. Le flux traversant une surface s'écrit alors
-$q = \Delta T / R_s$, ce qui donne une condition de Robin aux interfaces.
+Contre une paroi, l'air forme une couche limite où se concentrent les échanges
+convectifs et radiatifs. On les décrit par la loi de Newton : la densité de flux
+entre la paroi, à la température $T_p$, et le fluide, à la température $T_f$, vaut
+$q = h\,(T_p - T_f)$, où $h$ (\unit{\watt\per\square\metre\per\kelvin}) est le
+coefficient d'échange superficiel. Sur la frontière du solide, cette loi impose
+$-\lambda\,\partial T/\partial n = h\,(T - T_f)$, condition aux limites de
+troisième espèce (dite de Robin). On note $R_s = 1/h$
+(\unit{\square\metre\kelvin\per\watt}) la \emph{résistance superficielle}. La norme
+ISO~6946 \cite{iso6946} donne, pour un flux horizontal, $\Rsi = \num{0,13}$ côté
+intérieur ($h_i \approx \qty{7,7}{\watt\per\square\metre\per\kelvin}$) et
+$\Rse = \num{0,04}$ côté extérieur ($h_e = \qty{25}{\watt\per\square\metre\per\kelvin}$).
 
 Pour un mur plan d'épaisseur $e$, les trois résistances sont en série ; le
 coefficient de transmission vaut
@@ -259,7 +267,7 @@ de la \cref{sec-temps}.
 
 \subsection{Construction récursive}
 
-On part d'un triangle équilatéral. À chaque profondeur, chaque segment $[A,B]$ est
+La courbe de von Koch \cite{koch1904} est obtenue à partir d'un triangle équilatéral. À chaque profondeur, chaque segment $[A,B]$ est
 remplacé par quatre segments : on note $P_3 = A + \tfrac13\overrightarrow{AB}$ et
 $P_4 = A + \tfrac23\overrightarrow{AB}$, et le sommet du pic est l'image de $P_4$
 par la rotation de centre $P_3$ et d'angle $-\pi/3$ :
@@ -299,8 +307,9 @@ A_n = A_0\left(1 + \frac34\sum_{k=1}^{n}\left(\frac49\right)^k\right)
 
 Quand $n\to\infty$, le périmètre tend vers l'infini alors que l'aire tend vers
 $\frac85A_0$. La courbe limite a pour dimension de similarité
-$\ln 4/\ln 3 \approx 1,26$ : chaque morceau est fait de 4 copies réduites d'un
-facteur 3.
+$\ln 4/\ln 3 \approx 1,26$ \cite{mandelbrot1982} : elle est la réunion de 4 copies
+d'elle-même réduites d'un facteur 3, et une figure formée de $m$ copies réduites
+d'un facteur $k$ a pour dimension $D$ telle que $m = k^D$.
 
 \subsection{Pièces de même aire}
 
@@ -398,7 +407,8 @@ superficielle. D'où
 \end{equation}
 Pour deux cases identiques, $G=\lambda$ ; à l'interface de deux matériaux, on
 obtient la moyenne harmonique des conductivités, qui est la bonne moyenne pour des
-résistances en série.
+résistances en série et assure la continuité du flux à l'interface
+\cite{patankar1980}.
 
 \begin{proposition}[conservation]
 Le schéma \eqref{eq-vf} conserve l'énergie : $\frac{\mathrm{d}}{\mathrm{d}t}\sum_i C_iT_i
@@ -517,15 +527,39 @@ $\sum_j G_{ij} = 4\la$ et $C_i = \rho c\,\dx^2$, d'où
 \[
 \dt \le \frac{\rho c\,\dx^2}{4\la} = \frac{1206\times0,035^2}{400}\approx\qty{0,0037}{\second}.
 \]
-Atteindre le régime établi (une semaine simulée) demanderait plus de $10^8$ pas :
-c'est le problème des systèmes \emph{raides}, où cohabitent des échelles de temps
-très différentes (\cref{sec-physique}). Il faut un schéma implicite.
+Atteindre le régime établi (une semaine simulée) demanderait plus de $10^8$ pas.
+
+\begin{definition}
+Un système différentiel linéaire $y' = Ly$ dont les valeurs propres ont des parties
+réelles négatives est dit \emph{raide} lorsque ces parties réelles ont des ordres de
+grandeur très différents. Le pas d'un schéma explicite est limité par la valeur
+propre de plus grand module (l'évolution la plus rapide), alors que la durée à
+simuler est fixée par celle de plus petit module (l'évolution la plus lente).
+\end{definition}
+
+Ici, l'air évolue en quelques millisecondes à l'échelle d'une case et les murs en
+plusieurs jours (\cref{sec-physique}) : le rapport des échelles dépasse $10^8$. Il
+faut un schéma implicite.
 
 \subsection{Le schéma de Douglas-Rachford}
 
-Un schéma totalement implicite demanderait de résoudre à chaque pas un système de
-$N = N_g^2$ inconnues. Les méthodes à directions alternées découpent ce système en
-problèmes unidimensionnels. Le schéma de Douglas-Rachford, avec $M = C/\dt$, s'écrit
+Le schéma d'Euler implicite, avec $M = C/\dt$,
+\begin{equation}\label{eq-euler-impl}
+(M - A_x - A_y)\,T^{n+1} = M\,T^n + S,
+\end{equation}
+est stable pour tout $\dt$, mais il impose de résoudre à chaque pas un système de
+$N = N_g^2$ inconnues. Numérotée ligne par ligne, sa matrice est une matrice bande
+de demi-largeur $N_g$ : l'élimination de Gauss y coûte $O(N N_g^2) = O(N^2)$
+opérations par pas, soit $8\cdot10^{9}$ pour la grille de la fenêtre.
+
+Les méthodes à directions alternées \cite{peaceman1955,douglas1956} remplacent
+$M - A_x - A_y$ par un produit de facteurs unidimensionnels. On a en effet
+\[
+(M - A_x)\,M^{-1}(M - A_y) = M - A_x - A_y + A_x M^{-1} A_y,
+\]
+et $A_x$ ne couple que des cases d'une même ligne, $A_y$ que des cases d'une même
+colonne : chaque facteur se résout par une suite de systèmes tridiagonaux. Le schéma
+de Douglas-Rachford s'écrit
 \begin{equation}\label{eq-dr}
 \left\{
 \begin{aligned}
@@ -534,8 +568,32 @@ problèmes unidimensionnels. Le schéma de Douglas-Rachford, avec $M = C/\dt$, s
 \end{aligned}
 \right.
 \end{equation}
-$A_x$ ne couple que des cases d'une même ligne : la première étape est un système
-tridiagonal par ligne. De même, la seconde est un système tridiagonal par colonne.
+La première étape est un système tridiagonal par ligne, la seconde un système
+tridiagonal par colonne.
+
+\begin{proposition}[lien avec Euler implicite]
+Le schéma \eqref{eq-dr} équivaut à
+\[
+(M - A_x)\,M^{-1}(M - A_y)\,T^{n+1} = M\,T^n + S + A_x M^{-1} A_y\,T^n,
+\]
+c'est-à-dire au schéma d'Euler implicite \eqref{eq-euler-impl} auquel on ajoute le
+terme $A_x M^{-1}A_y\,(T^{n+1} - T^n)$ au membre de gauche.
+\end{proposition}
+
+\begin{proof}
+Posons $W = M^{-1}(M - A_y)T^{n+1}$. La seconde équation de \eqref{eq-dr} s'écrit
+$T^\star = W + M^{-1}A_yT^n$. En reportant dans la première,
+\[
+(M - A_x)W = (M + A_y)T^n + S - (M - A_x)M^{-1}A_yT^n
+           = M\,T^n + S + A_xM^{-1}A_y\,T^n.
+\]
+On conclut en développant $(M-A_x)M^{-1}(M-A_y) = M - A_x - A_y + A_xM^{-1}A_y$.
+\end{proof}
+
+Comme $M^{-1} = \dt\,C^{-1}$ et $T^{n+1} - T^n = O(\dt)$, le terme ajouté est
+$O(\dt^2)$, du même ordre que l'erreur de consistance locale d'Euler implicite : le
+schéma reste d'ordre 1 en temps. Il s'annule en régime établi, ce que précise la
+proposition suivante.
 
 \begin{proposition}[régime établi exact]
 Si $T^{n+1} = T^n = T$, alors $(A_x+A_y)T + S = 0$ : le régime établi du schéma est
@@ -547,6 +605,11 @@ La seconde équation donne $(M-A_y)T = MT^\star - A_yT$, donc $MT = MT^\star$ et
 $T^\star = T$ ($M$ est inversible). La première devient
 $(M-A_x)T = (M+A_y)T + S$, soit $-A_xT = A_yT + S$.
 \end{proof}
+
+Pour un schéma linéaire de la forme $T^{n+1} = B\,T^n + c$, on appelle
+\emph{facteur d'amplification} d'un mode la valeur propre de $B$ associée : le
+schéma est stable si tous les facteurs sont de module au plus 1, et un mode est
+d'autant plus vite amorti que son facteur est petit.
 
 \begin{proposition}[stabilité et amortissement]
 Supposons que $M^{-1}A_x$ et $M^{-1}A_y$ commutent, de valeurs propres $-a$ et $-b$
@@ -562,7 +625,10 @@ $(1+b)T^{n+1} = T^\star + bT^n = \frac{(1-b) + b(1+a)}{1+a}T^n = \frac{1+ab}{1+a
 Enfin $(1+a)(1+b) = 1+ab+a+b \ge 1+ab > 0$.
 \end{proof}
 
-Le schéma est donc stable pour tout $\dt$. Mais si $a$ et $b$ sont tous deux grands
+Le schéma est donc stable pour tout $\dt$. Sans hypothèse de commutation, Lions et
+Mercier ont montré que l'itération de Douglas-Rachford converge vers la solution du
+problème stationnaire pour une somme d'opérateurs monotones quelconques
+\cite{lions1979}, ce qui est le cas ici. Mais si $a$ et $b$ sont tous deux grands
 devant 1, $g\to1$ : les modes raides ne sont presque plus amortis. C'est le cas dans
 l'air, dont la capacité est minuscule devant sa conductance. Avec de grands pas,
 les variations rapides de l'air persistent et faussent le champ. On l'a mesuré sur le
@@ -589,7 +655,7 @@ plusieurs pas par image quand elle va vite.
 Chaque ligne ou colonne demande de résoudre un système tridiagonal
 $a_kx_{k-1}+b_kx_k+c_kx_{k+1} = d_k$, $0\le k<n$ (avec $a_0 = c_{n-1} = 0$). Les
 cases extérieures sont des lignes triviales $x_k = \Text$. L'algorithme de Thomas
-est l'élimination de Gauss adaptée à cette structure.
+est l'élimination de Gauss adaptée à cette structure \cite{golub2013}.
 
 \begin{algorithm}[H]
 \caption{Algorithme de Thomas}
@@ -663,12 +729,64 @@ non extérieures ; chaque composante touche l'extérieur (la pièce est entouré
 murs en contact avec l'extérieur), donc cette constante est nulle.
 \end{proof}
 
-On applique le gradient conjugué, préconditionné par la diagonale de $K$
-(Jacobi). Chaque itération coûte un produit $Kv$ et quelques combinaisons
-linéaires, soit $O(N)$ ; le produit est calculé sans stocker $K$, à partir des
-tableaux de conductances. Le nombre d'itérations croît comme la racine du
-conditionnement : de 455 (carré, $300\times300$) à environ 2\,500
-($1200\times1200$). Le régime établi est obtenu en \qty{0,2}{\second} sur la grille
+\paragraph{Formulation variationnelle.} Pour une matrice symétrique définie
+positive, résoudre le système revient à minimiser une fonction quadratique.
+
+\begin{proposition}\label{prop-variationnel}
+Soit $J(v) = \frac12\,v^{\top}Kv - S^{\top}v$ et $v^\star$ la solution de $Kv = S$.
+Pour tout $v$, $J(v) - J(v^\star) = \frac12\,(v - v^\star)^{\top}K\,(v - v^\star)$.
+En particulier, $v^\star$ est l'unique minimum de $J$, et $\nabla J(v) = Kv - S$.
+\end{proposition}
+
+\begin{proof}
+En développant avec $Kv^\star = S$ et la symétrie de $K$ :
+$\frac12(v-v^\star)^{\top}K(v-v^\star) = \frac12 v^{\top}Kv - v^{\top}S + \frac12
+v^{\star\top}S = J(v) + \frac12 v^{\star\top}S$, et $J(v^\star) = -\frac12
+v^{\star\top}S$. Le membre de droite est positif, nul seulement si $v = v^\star$.
+\end{proof}
+
+\paragraph{Méthode du gradient conjugué.} La méthode de plus forte pente descend
+selon $-\nabla J$, le résidu $r = S - Kv$, mais elle progresse en zigzag quand les
+valeurs propres de $K$ sont très dispersées. Le gradient conjugué \cite{hestenes1952}
+choisit des directions de descente $p_0, p_1, \dots$ \emph{conjuguées} par rapport à
+$K$, c'est-à-dire telles que $p_i^{\top}Kp_j = 0$ pour $i\ne j$. Chaque itération
+minimise alors $J$ exactement sur l'espace affine $v_0 + \mathrm{Vect}(p_0,\dots,p_k)$,
+sans défaire le travail des itérations précédentes. Les directions étant linéairement
+indépendantes, la méthode termine en au plus $N$ itérations en arithmétique exacte ;
+en pratique, elle converge bien avant. Avec le \emph{conditionnement}
+$\kappa = \lambda_{\max}/\lambda_{\min}$ (rapport des valeurs propres extrêmes de
+$K$), l'erreur vérifie \cite{saad2003}
+\[
+\|v_k - v^\star\|_K \le 2\left(\frac{\sqrt\kappa - 1}{\sqrt\kappa + 1}\right)^{k}
+\|v_0 - v^\star\|_K,\qquad \|w\|_K = \sqrt{w^{\top}Kw}.
+\]
+Le nombre d'itérations nécessaire croît donc comme $\sqrt\kappa$. Pour un laplacien
+discret, $\kappa$ croît comme $N_g^2$ : il faut $O(N_g)$ itérations.
+
+\paragraph{Préconditionnement.} On applique la méthode au système équivalent
+$P^{-1}Kv = P^{-1}S$, où $P$ est une approximation de $K$ facile à inverser,
+choisie pour que $P^{-1}K$ soit mieux conditionnée que $K$. On prend la diagonale de $K$
+(préconditionnement de Jacobi) : elle compense le contraste des conductivités entre
+l'air ($\la = 100$) et le béton ($\lm = 1,75$).
+
+\begin{algorithm}[H]
+\caption{Gradient conjugué préconditionné}
+\Entree{$K$ (sous forme de produit matrice-vecteur), $S$, $P = \mathrm{diag}(K)$, $v_0$, tolérance $\varepsilon$}
+\Sortie{$v$ tel que $\|S - Kv\| \le \varepsilon\,\|S\|$}
+$r \leftarrow S - Kv_0$ ;\quad $z \leftarrow P^{-1}r$ ;\quad $p \leftarrow z$ ;\quad $v \leftarrow v_0$\;
+\Tq{$\|r\| > \varepsilon\,\|S\|$}{
+  $q \leftarrow Kp$ ;\quad $\alpha \leftarrow (r^{\top}z)/(p^{\top}q)$\tcp*{pas optimal le long de $p$}
+  $v \leftarrow v + \alpha p$ ;\quad $r' \leftarrow r - \alpha q$ ;\quad $z' \leftarrow P^{-1}r'$\;
+  $\beta \leftarrow (r'^{\top}z')/(r^{\top}z)$\tcp*{nouvelle direction conjuguée}
+  $p \leftarrow z' + \beta p$ ;\quad $r \leftarrow r'$ ;\quad $z \leftarrow z'$\;
+}
+\end{algorithm}
+
+Chaque itération coûte un produit $Kp$ et quelques combinaisons linéaires, soit
+$O(N)$ ; le produit est calculé sans stocker $K$, à partir des tableaux de
+conductances. Le coût total est donc $O(N\cdot N_g) = O(N^{3/2})$. On mesure de 455
+itérations (carré, $300\times300$) à environ 2\,500 ($1200\times1200$), une croissance
+cohérente avec $O(N_g)$. Le régime établi est obtenu en \qty{0,2}{\second} sur la grille
 de la fenêtre et en une dizaine de secondes sur la grille fine, avec un résidu
 relatif de $10^{-10}$. Il coïncide avec celui de la simulation temporelle (par
 exemple $G = \num{79,852}$ pour le carré dans les deux cas).
@@ -812,6 +930,13 @@ contour est un polygone régulier de 720 côtés, de même aire que le cercle, e
 contient toutes les orientations de mur.
 
 \subsection{Résultats du test}
+
+\begin{definition}
+Une méthode est \emph{convergente d'ordre $p$} si son erreur vérifie
+$e(\dx) \sim c\,\dx^{p}$ quand $\dx\to0$. Diviser le pas par 2 divise alors l'erreur
+par $2^p$ ; en échelles logarithmiques, l'erreur en fonction du pas est une droite de
+pente $p$.
+\end{definition}
 
 \begin{center}
 \begin{tabular}{lccc}
@@ -1029,6 +1154,35 @@ pas soupçonner. Le modèle actuel est conservatif, validé à moins de \qty{1}{
 et ses résultats sont indépendants de la grille à environ \qty{1}{\percent} près. Il
 constitue une base solide pour les étapes suivantes : sensibilité au brassage de
 l'air, cycle jour/nuit et passage en trois dimensions.
+
+\begin{thebibliography}{99}
+\bibitem{douglas1956} J.~Douglas, H.~H.~Rachford, « On the numerical solution of heat
+conduction problems in two and three space variables », \emph{Transactions of the
+American Mathematical Society}, 82(2), p.~421--439, 1956.
+\bibitem{golub2013} G.~H.~Golub, C.~F.~Van~Loan, \emph{Matrix Computations},
+4\textsuperscript{e} éd., Johns Hopkins University Press, 2013.
+\bibitem{hestenes1952} M.~R.~Hestenes, E.~Stiefel, « Methods of conjugate gradients
+for solving linear systems », \emph{Journal of Research of the National Bureau of
+Standards}, 49(6), p.~409--436, 1952.
+\bibitem{iso6946} ISO~6946:2017, \emph{Composants et parois de bâtiments --
+Résistance thermique et coefficient de transmission thermique -- Méthodes de
+calcul}, Organisation internationale de normalisation, 2017.
+\bibitem{koch1904} H.~von~Koch, « Sur une courbe continue sans tangente, obtenue par
+une construction géométrique élémentaire », \emph{Arkiv för Matematik, Astronomi och
+Fysik}, 1, 1904.
+\bibitem{lions1979} P.-L.~Lions, B.~Mercier, « Splitting algorithms for the sum of two
+nonlinear operators », \emph{SIAM Journal on Numerical Analysis}, 16(6),
+p.~964--979, 1979.
+\bibitem{mandelbrot1982} B.~B.~Mandelbrot, \emph{The Fractal Geometry of Nature},
+W.~H.~Freeman, 1982.
+\bibitem{patankar1980} S.~V.~Patankar, \emph{Numerical Heat Transfer and Fluid
+Flow}, Hemisphere, 1980.
+\bibitem{peaceman1955} D.~W.~Peaceman, H.~H.~Rachford, « The numerical solution of
+parabolic and elliptic differential equations », \emph{Journal of the Society for
+Industrial and Applied Mathematics}, 3(1), p.~28--41, 1955.
+\bibitem{saad2003} Y.~Saad, \emph{Iterative Methods for Sparse Linear Systems},
+2\textsuperscript{e} éd., SIAM, 2003.
+\end{thebibliography}
 
 \appendix
 
