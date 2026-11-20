@@ -7,13 +7,13 @@
 
 static int sim_alloc(Sim *s) {
     int N = GRID_SIZE * GRID_SIZE;
-    s->T = calloc(N, sizeof(float));
-    s->Tnext = calloc(N, sizeof(float));
-    s->alpha = calloc(N, sizeof(float));
+    s->T = calloc(N, sizeof(double));
+    s->Tnext = calloc(N, sizeof(double));
+    s->alpha = calloc(N, sizeof(double));
     s->zones = calloc(N, 1);
     s->pixels = malloc(N * sizeof(uint32_t));
-    s->kx = calloc(N, sizeof(float));
-    s->ky = calloc(N, sizeof(float));
+    s->kx = calloc(N, sizeof(double));
+    s->ky = calloc(N, sizeof(double));
     if (!s->T || !s->Tnext || !s->alpha || !s->zones || !s->pixels || !s->kx || !s->ky)
         return 0;
     for (int i = 0; i < N; i++) s->Tnext[i] = AMBIENT_TEMP;
@@ -128,7 +128,7 @@ static int run_headless(int mode, int depth, long n_iter, const char *out) {
     printf("Final : T_moy = %.2f °C, écart-type = %.2f, T_min = %.2f °C\n",
            s.stat_avg, s.stat_std, s.stat_min);
     // En régime établi, la puissance injectée ressort entièrement
-    float out_p = s.stat_pext + s.stat_pcool;
+    double out_p = s.stat_pext + s.stat_pcool;
     printf("Bilan : P_source = %.3f, P_ext + P_cool = %.3f + %.3f = %.3f (écart %+.2f%%)\n",
            s.stat_power, s.stat_pext, s.stat_pcool, out_p,
            s.stat_power > 0 ? 100.0f * (out_p - s.stat_power) / s.stat_power : 0.0f);

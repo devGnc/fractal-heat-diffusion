@@ -104,7 +104,7 @@ void init_geometry(Sim *s) {
     for (int i = 0; i < N; i++) {
         s->zones[i] = ZONE_EXT;
         s->T[i] = AMBIENT_TEMP;
-        s->alpha[i] = 0.0f;
+        s->alpha[i] = 0.0;
     }
     
     // Rayon du cercle circonscrit au triangle du flocon de référence
@@ -175,7 +175,7 @@ void init_geometry(Sim *s) {
                 s->T[idx] = WALL_TEMP_INIT;
             }
             else {
-                s->alpha[idx] = 0.0f;
+                s->alpha[idx] = 0.0;
                 s->T[idx] = AMBIENT_TEMP;
             }
         }

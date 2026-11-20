@@ -17,7 +17,7 @@ HDR = $(wildcard $(SRCDIR)/*.h)
 # Fichiers objets (dans build/)
 OBJ = $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.o,$(SRC))
 
-.PHONY: all clean run plot data
+.PHONY: all clean run plot data test
 
 all: $(TARGET)
 
@@ -42,6 +42,19 @@ data: $(TARGET)
 plot:
 	python3 scripts/analyse.py
 	python3 scripts/profondeur.py
+
+# Test de validation : anneau circulaire comparé à la solution exacte, à
+# plusieurs résolutions s (source de rayon 8·s, mur au rayon 32·s).
+SCALES = 1 2 4
+TEST_SRC = tests/test_anneau.c $(SRCDIR)/physics.c $(SRCDIR)/geometry.c
+test: | $(BUILDDIR)
+	@for s in $(SCALES); do \
+		$(CC) $(CFLAGS) -DGRID_SIZE=$$((72 * s + 9)) -DSOURCE_RADIUS=$$((8 * s)) \
+			-DCOOLING_FACTOR=0 -o $(BUILDDIR)/test_anneau_s$$s $(TEST_SRC) -lm || exit 1; \
+	done
+	@printf "%-13s %s %4s %8s %8s %11s %11s %8s %8s %9s %8s\n" \
+		cas s grille Ra Rb P_simul P_exact "err_%" "bilan_%" R_mur Iter
+	@for s in $(SCALES); do ./$(BUILDDIR)/test_anneau_s$$s || exit 1; done
 
 # Ne supprime que les fichiers de compilation : les CSV de résultats sont conservés.
 clean:

@@ -5,7 +5,11 @@
 #include <stdio.h>
 #include <stdint.h>
 
+// GRID_SIZE, SOURCE_RADIUS et COOLING_FACTOR peuvent être redéfinis à la
+// compilation (-D...) : c'est ce que fait le test de l'anneau (make test).
+#ifndef GRID_SIZE
 #define GRID_SIZE 300
+#endif
 #define WIN_SIZE 900
 
 enum { ZONE_EXT = 0, ZONE_WALL = 1, ZONE_INT = 2 };
@@ -17,7 +21,9 @@ enum { ZONE_EXT = 0, ZONE_WALL = 1, ZONE_INT = 2 };
 #define DIFF_AIR 0.20f
 #define DIFF_WALL 0.02f
 
+#ifndef COOLING_FACTOR
 #define COOLING_FACTOR 0.00002f
+#endif
 
 // Stabilité du schéma explicite : DT · (somme des conductances d'une case) ≤ 1,
 // soit DT ≤ 1,25 dans l'air (α = 0,2). DT = 0,5 garde une marge de 2,5.
@@ -30,7 +36,9 @@ _Static_assert(STATS_EVERY % ITER_PER_FRAME == 0,
                "STATS_EVERY doit être un multiple de ITER_PER_FRAME");
 
 // Source chauffante : disque centré, maintenu à SOURCE_TEMP
+#ifndef SOURCE_RADIUS
 #define SOURCE_RADIUS 15
+#endif
 
 static inline int in_source(int x, int y) {
     int dx = x - GRID_SIZE / 2, dy = y - GRID_SIZE / 2;
@@ -46,10 +54,10 @@ typedef struct { int x, y; } Point;
 typedef struct { double x, y; } Vec2;
 
 typedef struct {
-    float *T, *Tnext;
-    float *alpha;
+    double *T, *Tnext;
+    double *alpha;
     // Conductances des faces : kx[i] entre i et i+1, ky[i] entre i et i+GRID_SIZE
-    float *kx, *ky;
+    double *kx, *ky;
     uint8_t *zones;
     uint32_t *pixels;
     SDL_Texture *tex;
@@ -64,12 +72,12 @@ typedef struct {
     int recording;
     
     // Statistiques sur l'air intérieur hors source (murs exclus)
-    float stat_avg, stat_std, stat_min;
+    double stat_avg, stat_std, stat_min;
     // Puissance fournie par la source au dernier pas (°C·px / unité de temps)
-    float stat_power;
+    double stat_power;
     // Bilan : puissance sortant par les faces mur/extérieur, pertes de Newton.
     // En régime établi : stat_power = stat_pext + stat_pcool.
-    float stat_pext, stat_pcool;
+    double stat_pext, stat_pcool;
     
     int count_int_square;
     int count_int_fractal;  // aire du flocon de profondeur KOCH_DEPTH_REF

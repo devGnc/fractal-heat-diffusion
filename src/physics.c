@@ -18,13 +18,13 @@
  * mur et l'extérieur n'a que la demi-case de mur en résistance, soit
  * k_f = 2·α_mur.
  */
-static float face_conductance(const Sim *s, int i, int j) {
+static double face_conductance(const Sim *s, int i, int j) {
     int ext_i = s->zones[i] == ZONE_EXT, ext_j = s->zones[j] == ZONE_EXT;
-    if (ext_i && ext_j) return 0.0f;
-    if (ext_i) return 2.0f * s->alpha[j];
-    if (ext_j) return 2.0f * s->alpha[i];
-    float a = s->alpha[i], b = s->alpha[j];
-    return (a + b > 0.0f) ? 2.0f * a * b / (a + b) : 0.0f;
+    if (ext_i && ext_j) return 0.0;
+    if (ext_i) return 2.0 * s->alpha[j];
+    if (ext_j) return 2.0 * s->alpha[i];
+    double a = s->alpha[i], b = s->alpha[j];
+    return (a + b > 0.0) ? 2.0 * a * b / (a + b) : 0.0;
 }
 
 void compute_conductances(Sim *s) {
@@ -33,8 +33,8 @@ void compute_conductances(Sim *s) {
     for (int y = 0; y < GRID_SIZE; y++) {
         for (int x = 0; x < GRID_SIZE; x++) {
             int i = y * GRID_SIZE + x;
-            s->kx[i] = (x + 1 < GRID_SIZE) ? face_conductance(s, i, i + 1) : 0.0f;
-            s->ky[i] = (y + 1 < GRID_SIZE) ? face_conductance(s, i, i + GRID_SIZE) : 0.0f;
+            s->kx[i] = (x + 1 < GRID_SIZE) ? face_conductance(s, i, i + 1) : 0.0;
+            s->ky[i] = (y + 1 < GRID_SIZE) ? face_conductance(s, i, i + GRID_SIZE) : 0.0;
             
             if (s->zones[i] == ZONE_INT) s->n_int++;
             if (s->zones[i] == ZONE_WALL) s->n_wall++;
@@ -61,17 +61,17 @@ void compute_conductances(Sim *s) {
 void check_stability(Sim *s) {
     // Le schéma explicite reste stable (et respecte le principe du maximum)
     // si DT · Σ k_f ≤ 1 pour chaque case.
-    float max_sum = 0.0f;
+    double max_sum = 0.0;
     for (int y = 1; y < GRID_SIZE - 1; y++) {
         for (int x = 1; x < GRID_SIZE - 1; x++) {
             int i = y * GRID_SIZE + x;
             if (s->zones[i] == ZONE_EXT) continue;
-            float sum = s->kx[i] + s->kx[i - 1] + s->ky[i] + s->ky[i - GRID_SIZE];
+            double sum = s->kx[i] + s->kx[i - 1] + s->ky[i] + s->ky[i - GRID_SIZE];
             if (sum > max_sum) max_sum = sum;
         }
     }
     
-    float cfl = DT * max_sum;
+    double cfl = DT * max_sum;
     printf("\n============================================\n");
     printf("VÉRIFICATION DE LA STABILITÉ NUMÉRIQUE\n");
     printf("============================================\n");
@@ -81,19 +81,19 @@ void check_stability(Sim *s) {
     printf("CFL = ΔT·Σk_f = %.5f\n", cfl);
     printf("Condition    : CFL ≤ 1\n");
     
-    if (cfl > 1.0f) {
+    if (cfl > 1.0) {
         printf("❌ ERREUR : Condition CFL violée (%.5f > 1)\n", cfl);
         printf("   → Réduire ΔT ou α_max\n");
         printf("============================================\n");
         exit(1);
     } else {
-        printf("✅ Condition CFL respectée (marge = ×%.1f)\n", 1.0f / cfl);
+        printf("✅ Condition CFL respectée (marge = ×%.1f)\n", 1.0 / cfl);
         printf("============================================\n\n");
     }
 }
 
 void step_physics(Sim *s) {
-    const float *T = s->T, *kx = s->kx, *ky = s->ky;
+    const double *T = s->T, *kx = s->kx, *ky = s->ky;
     const int G = GRID_SIZE;
     
     for (int y = 1; y < G - 1; y++) {
@@ -105,13 +105,13 @@ void step_physics(Sim *s) {
                 continue;
             }
             
-            float T_C = T[i];
-            float flux = kx[i]     * (T[i + 1] - T_C)
+            double T_C = T[i];
+            double flux = kx[i]     * (T[i + 1] - T_C)
                        + kx[i - 1] * (T[i - 1] - T_C)
                        + ky[i]     * (T[i + G] - T_C)
                        + ky[i - G] * (T[i - G] - T_C);
             
-            float cooling = COOLING_FACTOR * (T_C - AMBIENT_TEMP);
+            double cooling = COOLING_FACTOR * (T_C - AMBIENT_TEMP);
             
             s->Tnext[i] = T_C + DT * (flux - cooling);
         }
@@ -130,9 +130,9 @@ void step_physics(Sim *s) {
             }
         }
     }
-    s->stat_power = (float)(injected / DT);
+    s->stat_power = injected / DT;
     
-    float *tmp = s->T;
+    double *tmp = s->T;
     s->T = s->Tnext;
     s->Tnext = tmp;
     
@@ -144,7 +144,7 @@ void step_physics(Sim *s) {
 // fractale) et la source (fixée à SOURCE_TEMP) fausseraient la comparaison.
 void compute_stats(Sim *s) {
     double sum = 0.0, sum_sq = 0.0;
-    float min_temp = 1e6f;
+    double min_temp = 1e6;
     int count = 0;
     
     for (int y = 0; y < GRID_SIZE; y++) {
@@ -154,7 +154,7 @@ void compute_stats(Sim *s) {
             double t = s->T[i];
             sum += t;
             sum_sq += t * t;
-            if (t < min_temp) min_temp = (float)t;
+            if (t < min_temp) min_temp = t;
             count++;
         }
     }
@@ -162,9 +162,9 @@ void compute_stats(Sim *s) {
     if (count > 0) {
         double avg = sum / count;
         double variance = sum_sq / count - avg * avg;
-        s->stat_avg = (float)avg;
+        s->stat_avg = avg;
         s->stat_min = min_temp;
-        s->stat_std = (float)(variance > 0 ? sqrt(variance) : 0.0);
+        s->stat_std = (variance > 0 ? sqrt(variance) : 0.0);
     }
     
     // Bilan de puissance : sortie par les faces mur/extérieur et pertes de Newton
@@ -177,13 +177,13 @@ void compute_stats(Sim *s) {
             p_cool += COOLING_FACTOR * (s->T[i] - AMBIENT_TEMP);
             if (z != ZONE_WALL) continue;
             int nb[4] = { i + 1, i - 1, i + GRID_SIZE, i - GRID_SIZE };
-            float k[4] = { s->kx[i], s->kx[i - 1], s->ky[i], s->ky[i - GRID_SIZE] };
+            double k[4] = { s->kx[i], s->kx[i - 1], s->ky[i], s->ky[i - GRID_SIZE] };
             for (int n = 0; n < 4; n++) {
                 if (s->zones[nb[n]] == ZONE_EXT)
                     p_ext += k[n] * (s->T[i] - AMBIENT_TEMP);
             }
         }
     }
-    s->stat_pext = (float)p_ext;
-    s->stat_pcool = (float)p_cool;
+    s->stat_pext = p_ext;
+    s->stat_pcool = p_cool;
 }
