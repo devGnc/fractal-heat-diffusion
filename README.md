@@ -14,118 +14,133 @@ pertes en hiver et plus d'apports en canicule. La fractale est donc étudiée co
 l'intérieur vers un milieu plus froid (air nocturne, sol).
 
 On compare une pièce dont le contour est un **flocon de Koch** à une **pièce carrée
-de même aire** (36 m²). La pièce reçoit des apports internes (occupants,
-équipements) et les évacue à travers des murs en béton vers l'extérieur, à 20 °C.
-La grandeur étudiée est la **conductance de l'enveloppe**
+de même aire** (36 m²). Une source de chaleur (radiateur, appareil) placée au centre
+chauffe l'air, qui transmet la chaleur aux murs en béton, puis à l'extérieur, à
+20 °C. La grandeur étudiée est la **conductance de l'enveloppe**
 G = P / (T_air − T_ext) : la puissance évacuée par degré d'écart entre l'air
-intérieur et l'extérieur.
+intérieur (température moyenne) et l'extérieur.
 
 Mots-clés : fractales, suites, récursivité, programmation en C, équation de la
-chaleur, volumes finis, complexité.
+chaleur, volumes finis, schéma implicite, systèmes tridiagonaux, gradient conjugué,
+complexité.
 
 ## Compilation et exécution
 
 ```bash
 brew install sdl2 pkg-config      # macOS
 make                              # compile ./thermalfractalsim
-make run                          # fenêtre interactive (grille de 3,5 cm)
-make data                         # carré + Koch 0 à 4 sans fenêtre, grille de 1,25 cm (≈ 2 min)
+make run                          # fenêtre interactive
+make data                         # courbes dans le temps, carré + Koch 0 à 4 (≈ 2 min)
+make regime                       # régime établi précis, grille de 1,25 cm (≈ 1 min)
 make plot                         # courbes temporelles + étude en profondeur
-make test                         # validation : pièce circulaire comparée à la solution exacte (≈ 10 s)
+make test                         # validation : pièce circulaire comparée à la solution exacte (≈ 1 min)
 ```
 
-Images de la fenêtre sans l'ouvrir (pour le README, un rapport, une présentation) :
+## Fenêtre interactive
 
-```bash
-./thermalfractalsim --capture image.bmp 3 temp 168   # profondeur 3, vue température, après 168 h
-./thermalfractalsim --capture image.bmp 4 flux 240   # profondeur 4, vue flux, après 10 jours
-```
+Le carré et un flocon de Koch, de même aire et chauffés par la même source, sont
+simulés côte à côte. Sous chaque pièce : son nom et la température moyenne de l'air.
+Les traits fins sont les **isothermes** (une tous les 1 °C).
 
-Mode sans fenêtre : la simulation tourne jusqu'au régime établi (une ligne de
-CSV par heure simulée) :
+La vitesse est **automatique** : au début, quelques secondes simulées par image, pour
+voir la chaleur quitter la source et remplir la pièce ; puis le temps s'accélère, pour
+voir les murs se réchauffer pendant plusieurs jours.
 
-```bash
-./thermalfractalsim --headless carre                # → res_carre.csv
-./thermalfractalsim --headless koch3                # flocon de profondeur 3 → res_koch3.csv
-./thermalfractalsim --headless koch2 20000 f.csv    # nombre d'itérations et fichier imposés
-```
+![Début : la chaleur quitte la source](docs/captures/debut.png)
 
-Géométries : `carre`, `koch0` (triangle) à `koch4`, et `fractal` (= `koch2`).
-Le résumé final affiche la température de l'air, le **bilan d'énergie**
-(en régime établi, `P_ext = Q_int`) et la conductance G.
+Après 3 minutes : la chaleur se répand depuis la source. Les pointes du flocon,
+loin de la source, sont encore froides.
 
-### Fenêtre interactive
+![Après 12 heures](docs/captures/12h.png)
 
-Le carré (référence) et un flocon de Koch, de même aire et avec les mêmes apports de
-chaleur, sont simulés côte à côte. Sous chaque pièce : la température de l'air, la
-conductance G, la longueur de mur, la chaleur évacuée et le flux moyen par mètre de
-mur ; pour le flocon, l'écart de température et le gain par rapport au carré. À
-droite : la légende des couleurs, la courbe de la température de l'air des deux
-pièces et les commandes. Pendant la montée en température, G est marquée
-« provisoire » : P / (T_air − T_ext) n'est la conductance de la pièce qu'en régime
-établi.
-
-![Vue température](docs/captures/temperature.png)
-
-Vue **température** : l'air brassé a une seule température ; le dégradé dans les
-murs montre la chaleur qui traverse le béton. Après 7 jours, le flocon de
-profondeur 3 reste à 25,5 °C, contre 29,4 °C pour le carré.
+Après 12 heures : les murs chauffent. Avec la même source, le flocon reste plus
+frais que le carré, car il a plus de mur pour évacuer la chaleur.
 
 ![Vue flux de chaleur](docs/captures/flux.png)
 
-Vue **flux de chaleur** (touche F) : intensité du flux dans les murs, en W/m².
-Chaque mètre de mur du flocon évacue moins que celui du carré (15 W/m² contre 33 en
-moyenne), surtout au fond des creux, mais le flocon a deux fois plus de mur.
+Vue **flux** (touche F) : intensité du flux de chaleur dans les murs, en W/m². Les
+pointes du flocon évacuent beaucoup, le fond des creux très peu.
 
 | Touche | Action |
 |---|---|
-| 0 à 4 | Profondeur du flocon (les deux pièces repartent de zéro) |
-| F | Vue température ↔ flux de chaleur |
 | Espace | Pause |
-| + / − | Vitesse (de 2,5 min à 2 h 40 simulées par image) |
+| + / − | Vitesse manuelle (de 1 s à 20 min simulées par image) |
+| A | Vitesse automatique |
+| 0 à 4 | Profondeur du flocon (les deux pièces repartent de zéro) |
+| F | Vue température ↔ flux de chaleur dans les murs |
+| I | Isothermes |
+| S | Démarrer / arrêter l'enregistrement CSV |
 | R | Recommencer |
-| S | Démarrer / arrêter l'enregistrement CSV des deux pièces (`res_carre.csv`, `res_koch<n>.csv`) |
+| H | Aide |
 | Q, Échap | Quitter |
 
 Le texte est affiché avec une petite police bitmap intégrée (`src/font.c`) : aucune
 bibliothèque en plus de SDL2 n'est nécessaire.
 
+### Enregistrement et analyse en Python
+
+La touche **S** démarre une session : un dossier
+`enregistrements/AAAA-MM-JJ_HHhMMmSS/` avec un CSV par pièce (`carre.csv`,
+`koch3.csv`), une ligne toutes les 10 minutes simulées. S arrête la session ;
+changer de profondeur ou recommencer l'arrête aussi. Les sessions ne s'écrasent pas
+et git les ignore.
+
+```bash
+python3 scripts/analyse.py                                    # dernière session
+python3 scripts/analyse.py enregistrements/2026-11-20_15h02m10
+```
+
+### Sans fenêtre
+
+```bash
+./thermalfractalsim --headless koch3                # dans le temps, jusqu'au régime établi → res_koch3.csv
+./thermalfractalsim --headless koch2 20000 f.csv    # nombre d'itérations et fichier imposés
+./thermalfractalsim --regime koch3                  # régime établi seul, en une fraction de seconde → regime_koch3.csv
+./thermalfractalsim --capture image.bmp 3 flux 120  # image de la fenêtre (profondeur, vue, heures)
+```
+
+Géométries : `carre`, `koch0` (triangle) à `koch4`, et `fractal` (= `koch2`).
+Le résumé affiche la température de l'air (moyenne et maximum), le **bilan
+d'énergie** (en régime établi, `P_ext = Q_int`) et la conductance G.
+
 Format du CSV : une ligne de commentaire décrivant la géométrie
 (`# geometrie=koch2 profondeur=2 aire_m2=... perimetre_m=... t_ext=...`, lue avec
 `pandas.read_csv(..., comment="#")`), puis les colonnes
-`Iter,Time_h,T_air,T_mur,P_int,P_mur,P_ext` :
+`Iter,Time_h,T_air,T_air_max,T_mur,P_int,P_mur,P_ext` :
 
-- `Time_h` : temps simulé en heures ; `T_air` : température de l'air ;
-  `T_mur` : température moyenne des murs (°C) ;
-- `P_int` : apports internes ; `P_mur` : puissance de l'air vers les murs ;
+- `Time_h` : temps simulé en heures ;
+- `T_air`, `T_air_max` : température moyenne et maximale de l'air ; `T_mur` :
+  température moyenne des murs (°C) ;
+- `P_int` : puissance de la source ; `P_mur` : puissance de l'air vers les murs ;
   `P_ext` : puissance des murs vers l'extérieur (W par mètre de hauteur).
 
-Chaque lancement écrase les CSV de la racine, que git ignore : il faut les
-déplacer dans `results/<version>/` pour les garder.
+`make data` et `make regime` écrivent à la racine (`res_*.csv`, `regime_*.csv`),
+que git ignore : il faut déplacer les fichiers dans `results/<version>/` pour les
+garder.
 
 ## Organisation
 
 ```
 src/
   thermal_diffusion.h   paramètres physiques et structure Sim
-  geometry.c            contours (Koch récursif, carré) de même aire, murs épais, corrections de surface
-  physics.c             volumes finis, conductances des faces, stabilité, statistiques, bilan
-  io.c                  allocation, réinitialisation, enregistrement CSV
+  geometry.c            contours (Koch récursif, carré) de même aire, murs épais, source, corrections de surface
+  physics.c             volumes finis, schéma implicite (Douglas-Rachford, Thomas), gradient conjugué, bilan
+  io.c                  allocation, réinitialisation, format CSV
   render.c              cartes de couleurs (température, flux), flux de chaleur dans les murs
-  ui.c                  fenêtre interactive (deux pièces côte à côte, légende, courbes), --capture
+  ui.c                  fenêtre interactive, sessions d'enregistrement, --capture
   font.c                police bitmap intégrée
-  main.c                ligne de commande, mode headless
+  main.c                ligne de commande : --headless, --regime, --capture
 tests/test_anneau.c     validation sur une pièce circulaire (solution exacte), plusieurs résolutions
-scripts/analyse.py      évolution temporelle de toutes les simulations d'un dossier
+scripts/analyse.py      évolution temporelle des simulations d'un dossier (ou d'une session)
 scripts/profondeur.py   régime établi en fonction de la profondeur de Koch
-results/v0/             premiers résultats (ancien dépôt, régime non établi)
-results/v1/             headless, stats sur l'air, schéma encore non conservatif
-results/v2/             schéma conservatif en unités de grille (float)
-results/v3/             modèle physique, carré + Koch 0 à 4, grille de 1,25 cm
+results/v0/ … v2/       anciens modèles (unités de grille)
+results/v3/             modèle physique avec air à une seule température
+results/v4/temps/       modèle actuel, courbes dans le temps (make data)
+results/v4/regime/      modèle actuel, régime établi sur grille fine (make regime)
 docs/                   export GeoGebra ; captures/ : images de la fenêtre
 ```
 
-## Modèle (v3)
+## Modèle (v4)
 
 Coupe horizontale d'une pièce, en unités physiques ; les grandeurs sont données
 **par mètre de hauteur** (puissances en W/m, conductances en W/(m·K)).
@@ -133,119 +148,127 @@ Coupe horizontale d'une pièce, en unités physiques ; les grandeurs sont donné
 | | Valeur |
 |---|---|
 | Pièce | 36 m² pour toutes les géométries (carré de 6 m) |
-| Air intérieur | brassé par la convection : une seule température T_air, ρc = 1 206 J/(m³·K) |
+| Source | disque de 30 cm de rayon au centre de gravité de la pièce, Q = 800 W/m (2 kW pour 2,5 m de haut) |
+| Air | ρc = 1 206 J/(m³·K) ; conductivité effective λ_air = 100 W/(m·K) (air brassé) |
 | Murs | béton de 20 cm : λ = 1,75 W/(m·K), ρc = 2,3·10⁶ J/(m³·K) |
 | Surfaces (ISO 6946) | R_si = 0,13 m²·K/W (intérieur), R_se = 0,04 m²·K/W (extérieur) |
-| Apports internes | Q_int = 800 W/m, soit 2 kW pour 2,5 m de haut (≈ 55 W/m²) |
 | Extérieur | thermostat à 20 °C |
-| Grille | 300 × 300 cases de 3,5 cm (fenêtre) ; 1 200 × 1 200 cases de 1,25 cm (`make data`) |
-| Pas de temps | 30 s, schéma explicite |
+| Grille | 300 × 300 cases de 3,5 cm (fenêtre, `make data`) ; 1 200 × 1 200 cases de 1,25 cm (`make regime`) |
+| Pas de temps | 30 s au plus |
 
+- **Air brassé.** La convection mélange l'air de la pièce. On la représente par une
+  conductivité effective, bien plus grande que celle de l'air immobile
+  (0,026 W/(m·K)). Avec λ_air = 100 W/(m·K), la diffusivité vaut α ≈ 0,08 m²/s :
+  la chaleur se répartit dans une pièce de 3 m de rayon en R²/α ≈ 2 minutes, l'ordre
+  de grandeur du brassage d'une pièce chauffée. L'air n'est pas uniforme : il est
+  plus chaud près de la source (environ 3 °C au-dessus de la moyenne).
 - **Géométrie.** Le contour intérieur est un polygone exact (flocon de Koch ou
   carré). Une case est de l'air si son centre est dans le polygone, du mur si elle
   est à moins de 20 cm du contour, côté extérieur. Le mur suit le contour vers
   l'extérieur : il comble les creux plus étroits que son épaisseur.
-- **Volumes finis.** Chaque case de mur a une capacité ρc·Δx² ; chaque face, une
-  conductance égale à l'inverse des résistances traversées (demi-cases de béton,
-  résistance superficielle). Le flux d'une case vers sa voisine est l'opposé du flux
-  inverse : l'énergie est conservée, et le bilan boucle à la précision machine.
-- **Air brassé.** L'air est un seul nœud : c'est la méthode standard en thermique du
-  bâtiment. Résoudre l'air sur la grille avec une conductivité « efficace » élevée
-  imposerait un pas de temps d'environ 0,01 s, alors qu'il faut une semaine
-  simulée pour que les murs atteignent le régime établi.
+- **Volumes finis.** Chaque case a une capacité ρc·Δx² ; chaque face, une
+  conductance égale à l'inverse des résistances traversées (demi-cases, résistance
+  superficielle). Le flux d'une case vers sa voisine est l'opposé du flux inverse :
+  l'énergie est conservée, et le bilan boucle à la précision machine.
+- **Schéma implicite par directions alternées (Douglas-Rachford).** Un pas de temps
+  résout d'abord chaque ligne de la grille en implicite selon x, puis chaque colonne
+  selon y. Chaque ligne ou colonne est un système tridiagonal, résolu en O(n) par
+  l'**algorithme de Thomas** : un pas coûte O(N) pour N cases (1 ms pour la grille
+  de la fenêtre). Le schéma est stable pour tout pas de temps, et son régime établi
+  est exactement celui de l'équation discrète. Un schéma explicite imposerait ici un
+  pas d'environ 0,004 s, à cause de l'air (très conducteur, très peu de capacité).
+  Au-delà de 30 s par pas, les variations rapides de l'air ne sont plus amorties
+  correctement : la fenêtre enchaîne donc plusieurs pas par image.
+- **Régime établi direct (`--regime`).** Le régime établi vérifie un système
+  linéaire symétrique défini positif, résolu par **gradient conjugué** préconditionné
+  par la diagonale : 0,2 s sur la grille de la fenêtre, une dizaine de secondes sur
+  la grille fine, au lieu de 5 à 12 jours simulés.
 - **Corrections de surface.** Deux défauts de la grille sont corrigés, face par
   face, à partir du vrai contour (voir la validation) :
   - *escalier* : un mur incliné d'un angle θ est une suite de marches qui compte
     L·(|cos θ| + |sin θ|) de faces pour une longueur L. Les résistances de surface
     sont multipliées par ce facteur, calculé avec la vraie normale au contour ;
   - *épaisseur* : les cases sont entières, si bien qu'un mur de 20 cm sur des cases
-    de 3,5 cm n'en faisait que 17,5 (G du carré trop grande de 5 %). Chaque face de
-    surface reçoit la résistance de l'épaisseur manquante (ou en trop) entre la
-    face et la vraie surface.
-- **Stabilité.** Δt · Σ conductances ≤ capacité, pour chaque case de mur et pour le
-  nœud d'air ; vérifié au démarrage (au plus 0,58 avec les valeurs ci-dessus).
+    de 3,5 cm n'en faisait que 17,5. Chaque face de surface reçoit la résistance de
+    l'épaisseur manquante (ou en trop) entre la face et la vraie surface.
 
-## Résultats (v3)
+## Résultats (v4)
 
-`make data`, régime établi, grille de 1,25 cm (`results/v3/`) :
+`make regime`, régime établi, grille de 1,25 cm (`results/v4/regime/`) :
 
-| | Périmètre intérieur | T_air | G (W/(m·K)) | G / G_carré | G par mètre de mur |
+| | Périmètre intérieur | T_air moyenne | G (W/(m·K)) | G / G_carré | G par mètre de mur |
 |---|---|---|---|---|---|
-| Carré | 24,0 m | 29,37 °C | 85,4 | 1,00 | 3,56 |
-| Koch 0 (triangle) | 27,4 m | 28,25 °C | 97,0 | 1,14 | 3,55 |
-| Koch 1 | 31,6 m | 27,27 °C | 110,0 | 1,29 | 3,48 |
-| Koch 2 | 40,0 m | 26,04 °C | 132,5 | 1,55 | 3,32 |
-| Koch 3 | 52,1 m | 25,33 °C | **150,2** | **1,76** | 2,88 |
-| Koch 4 | 68,9 m | 26,23 °C | 128,4 | 1,50 | 1,87 |
-
-Repère : un mur droit de ce type transmet U = 1 / (R_si + e/λ + R_se) =
-3,52 W/(m²·K), soit 3,52 W/(m·K) par mètre de mur et de hauteur.
+| Carré | 24,0 m | 30,04 °C | 79,7 | 1,00 | 3,32 |
+| Koch 0 (triangle) | 27,4 m | 29,01 °C | 88,8 | 1,11 | 3,25 |
+| Koch 1 | 31,6 m | 28,00 °C | 100,0 | 1,26 | 3,17 |
+| Koch 2 | 40,0 m | 26,75 °C | 118,6 | 1,49 | 2,97 |
+| Koch 3 | 52,1 m | 26,03 °C | **132,6** | **1,66** | 2,54 |
+| Koch 4 | 68,9 m | 26,99 °C | 114,4 | 1,44 | 1,66 |
 
 **Lecture.**
-- Avec les mêmes apports internes, le flocon de profondeur 3 reste à **25,3 °C**
-  contre **29,4 °C** pour le carré : il évacue 76 % de chaleur en plus par degré
-  d'écart.
+- Avec la même source, le flocon de profondeur 3 reste à **26,0 °C** contre
+  **30,0 °C** pour le carré : il évacue 66 % de chaleur en plus par degré d'écart.
 - Le gain est inférieur à l'allongement du mur (+117 % de périmètre à la
   profondeur 3) : chaque mètre de mur sert de moins en moins (dernière colonne).
-  Dans les creux, les murs voisins se partagent la chaleur, et la surface
-  extérieure du mur est plus courte que la surface intérieure.
+  Dans les creux, les murs voisins se partagent la chaleur ; la surface extérieure
+  du mur est plus courte que la surface intérieure ; et la chaleur doit traverser
+  l'air jusqu'aux pointes, loin de la source.
 - **Il existe une profondeur optimale, ici 3.** À la profondeur 4, les détails
   (9 cm) sont plus petits que l'épaisseur du mur (20 cm) : le mur bouche les creux,
-  sa surface extérieure raccourcit (faces extérieures : 5 100 → 3 916), et G
-  diminue. L'épaisseur du mur limite physiquement la fractale.
+  sa surface extérieure raccourcit, et G diminue. L'épaisseur du mur limite
+  physiquement la fractale.
+- Par rapport au modèle v3 (air à une seule température), le gain du flocon passe
+  de +76 % à +66 % : la résistance de l'air entre la source et les murs pénalise les
+  pointes, éloignées de la source.
 
-**Convergence en maillage** (G en W/(m·K)) :
+**Convergence en maillage** (G en W/(m·K), `--regime`) :
 
-| | Δx = 5 cm | 3,5 cm (fenêtre) | 2,5 cm | 1,25 cm (`make data`) |
-|---|---|---|---|---|
-| Carré | 85,4 | 85,6 | 85,4 | 85,4 |
-| Koch 0 | 96,5 | 96,6 | 96,7 | 97,0 |
-| Koch 2 | 131,3 | 131,1 | 132,3 | 132,5 |
-| Koch 3 | 144,1 | 146,6 | 146,4 | 150,2 |
-| Koch 4 | 118,4 | 119,5 | 123,8 | 128,4 |
+| | Δx = 5 cm | 3,5 cm (fenêtre) | 2,5 cm | 1,25 cm (`make regime`) | 0,625 cm |
+|---|---|---|---|---|---|
+| Carré | 79,7 | 79,9 | 79,7 | 79,7 | 79,7 |
+| Koch 0 | 88,4 | 88,5 | 88,6 | 88,8 | 88,8 |
+| Koch 2 | 117,6 | 117,4 | 118,3 | 118,6 | 119,2 |
+| Koch 3 | 127,8 | 129,8 | 129,5 | 132,6 | 132,9 |
+| Koch 4 | 106,3 | 107,2 | 110,7 | 114,4 | 115,5 |
 
-Jusqu'à la profondeur 2, les résultats sont stables à 1 % près. Aux profondeurs 3 et
-4, ils ne sont pas encore convergés : les pointes à 60° et les creux étroits sont mal
-résolus sur une grille grossière (à 5 cm, la surface intérieure de Koch 3 compte
-4,7 % de faces de moins que la valeur théorique ; à 1,25 cm, 0,5 %). Leurs valeurs à
-1,25 cm sont probablement un peu sous-estimées, mais l'ordre des résultats (maximum
-à la profondeur 3) est le même à toutes les résolutions. La fenêtre (3,5 cm)
-sous-estime G de Koch 3 d'environ 2 %.
+Entre les grilles de 1,25 et 0,625 cm, G ne varie plus que de 0,03 % (Koch 0) à
+1 % (Koch 4) : les valeurs de `make regime` sont justes à environ 1 % près, et
+l'ordre des résultats (maximum à la profondeur 3) est le même à toutes les
+résolutions. Sur des grilles grossières, les pointes à 60° et les creux étroits sont
+mal résolus : la fenêtre (3,5 cm) sous-estime G de Koch 3 d'environ 2 %, celui de
+Koch 4 d'environ 7 %.
 
 ## Validation : test de la pièce circulaire
 
-`make test` simule une pièce circulaire de rayon Ra = 1,6 m (air à 30 °C imposé),
-entourée d'un mur de béton jusqu'à Rb = 1,8 m, et compare la puissance à la solution
-exacte (trois résistances en série) :
+`make test` simule une pièce circulaire de rayon Ra = 1,6 m, chauffée par la source
+au centre, entourée d'un mur de béton jusqu'à Rb = 1,8 m. En régime établi, la
+conduction radiale donne le profil exact de température (q = Q/2π) :
 
-P = (T_air − T_ext) / ( R_si/(2π Ra) + ln(Rb/Ra)/(2π λ) + R_se/(2π Rb) )
+- dans l'air : T(r) = T(Ra) + (q/λ_air) · ln(Ra/r) ;
+- dans la source : T(r) = T(r_s) + (q/2λ_air) · (1 − r²/r_s²) ;
+- à la paroi : T(Ra) = T_ext + Q · ( R_si/(2π Ra) + ln(Rb/Ra)/(2π λ) + R_se/(2π Rb) ).
 
-Le code de la simulation est réutilisé tel quel, à trois résolutions
-(Δx = 5 ; 2,5 ; 1,25 cm). Un cercle contient toutes les orientations de mur.
-`R_surf` est la résistance des surfaces déduite de la simulation, rapportée à sa
-valeur exacte (1 = surfaces correctement représentées).
+On compare la température moyenne de l'air, simulée et exacte, à travers
+G = Q / (T_air − T_ext). Le code de la simulation est réutilisé tel quel, à trois
+résolutions (Δx = 5 ; 2,5 ; 1,25 cm). Un cercle contient toutes les orientations de
+mur.
 
-| Cas | Erreur sur P à 5 cm | 2,5 cm | 1,25 cm | R_surf (1,25 cm) |
-|---|---|---|---|---|
-| Conduction seule, sans corrections | +3,5 % | +2,1 % | +0,7 % | — |
-| Conduction seule, avec corrections | −0,6 % | −0,3 % | −0,2 % | — |
-| Surfaces de la norme, sans corrections | +14,0 % | +14,2 % | +14,2 % | 0,795 |
-| Surfaces de la norme, avec corrections (simulation) | −1,6 % | −0,9 % | −0,5 % | 1,008 |
+| Cas | Erreur sur G à 5 cm | 2,5 cm | 1,25 cm |
+|---|---|---|---|
+| Sans résistances de surface, avec corrections | −0,55 % | −0,28 % | −0,16 % |
+| Surfaces de la norme, sans corrections | +13,5 % | +13,8 % | +13,7 % |
+| Surfaces de la norme, avec corrections (simulation) | −1,51 % | −0,85 % | −0,45 % |
 
 **Lecture.**
-- La conduction dans le mur converge quand la grille s'affine. La correction
-  d'épaisseur divise l'erreur par 4 à 6 et rend la convergence régulière (l'erreur
-  est divisée par 2 quand Δx est divisé par 2).
-- Sans correction, la résistance des surfaces est trop faible de 20 % **à toutes les
-  résolutions**. C'est exactement la valeur théorique : sur un cercle, la moyenne
-  de 1/(|cos θ| + |sin θ|) vaut 0,794. Pour un flocon (murs à 0°, 60° et 120°), le
-  biais aurait favorisé la fractale face au carré (dont les murs sont alignés sur la
-  grille et ne subissent pas de biais) : G de Koch 0 passait de 97 à 109 W/(m·K).
-- Avec les corrections, l'erreur est divisée par 2 à chaque raffinement et reste
-  sous 1 % dès 2,5 cm.
-- Le cercle moyenne les positions des murs par rapport à la grille : il ne voyait
-  pas le défaut d'épaisseur, visible seulement sur des murs droits (carré). C'est la
-  comparaison du carré à plusieurs résolutions qui l'a révélé.
+- Avec les corrections, le schéma converge : l'erreur est divisée par 2 quand Δx est
+  divisé par 2 (ordre 1), et elle reste sous 1 % dès 2,5 cm.
+- Sans correction, l'erreur reste d'environ +14 % **à toutes les résolutions** : sur
+  un cercle, la moyenne de 1/(|cos θ| + |sin θ|) vaut 0,794, et les surfaces en
+  escalier échangent trop. Pour un flocon (murs à 0°, 60° et 120°), ce biais aurait
+  favorisé la fractale face au carré, dont les murs sont alignés sur la grille.
+- Le cercle moyenne les positions des murs par rapport à la grille : il ne voit pas
+  le défaut d'épaisseur, visible seulement sur des murs droits. C'est la comparaison
+  du carré à plusieurs résolutions qui l'a révélé.
 
 ## Historique des corrections
 
@@ -256,25 +279,31 @@ valeur exacte (1 = surfaces correctement représentées).
   (bilan faux de 0,01 à 0,16 %). Températures passées en `double`.
 - v3 : unités physiques ; diffusivité α et conductivité λ séparées (le code v2
   mettait α là où il faut λ, ce qui rendait le mur 10 fois moins conducteur que
-  l'air, l'inverse de la réalité) ; air brassé au lieu d'air immobile ; murs épais ;
-  résistances superficielles avec correction d'escalier ; pertes de Newton
-  retirées (sol et plafond considérés comme adiabatiques).
-- v3.1 : correction d'épaisseur des murs ; nouvelle fenêtre (deux pièces côte à
-  côte, vue flux, légende, courbes, police intégrée), option `--capture`.
+  l'air, l'inverse de la réalité) ; murs épais ; résistances superficielles avec
+  correction d'escalier ; pertes de Newton retirées (sol et plafond adiabatiques).
+  L'air était un seul nœud de température : physiquement acceptable, mais il
+  supprimait toute diffusion visible dans la pièce.
+- v3.1 : correction d'épaisseur des murs ; police intégrée, option `--capture`.
+- v4 : air résolu sur la grille (conductivité effective d'air brassé) et source
+  localisée ; schéma implicite par directions alternées (Douglas-Rachford,
+  algorithme de Thomas) ; régime établi direct par gradient conjugué ; fenêtre
+  centrée sur la diffusion (isothermes, vitesse automatique, texte réduit) ;
+  sessions d'enregistrement.
 
 ## Limites actuelles et pistes
 
-1. **Résolution des petits détails** : aux profondeurs 3 et 4, G varie encore de 3 à
-   4 % entre les grilles de 2,5 et 1,25 cm. Pistes : grille plus fine, ou un
-   solveur direct du régime établi (∇·(λ∇T) = 0), beaucoup plus rapide que le
-   schéma explicite.
-2. **Extérieur à température fixe** : en canicule, l'extérieur est plus chaud que
+1. **Conductivité effective de l'air** : la convection est représentée par une
+   diffusion. λ_air fixe la répartition de la chaleur dans la pièce et pèse sur les
+   résultats (les pointes du flocon sont loin de la source) : à faire varier.
+2. **Position de la source** : au centre de gravité. Une source près d'un mur, ou
+   plusieurs sources, changeraient la comparaison.
+3. **Extérieur à température fixe** : en canicule, l'extérieur est plus chaud que
    l'intérieur, et la fractale ferait entrer plus de chaleur. Étape naturelle : un
    cycle jour/nuit, où le bilan dépend de l'inertie des murs.
-3. **Mur non isolé** : avec un isolant, la résistance du mur domine et le rôle de la
+4. **Mur non isolé** : avec un isolant, la résistance du mur domine et le rôle de la
    forme change. Variante à tester (béton + 10 cm d'isolant).
-4. **Contrôle** : comparer la fractale à une forme non fractale de même périmètre
+5. **Contrôle** : comparer la fractale à une forme non fractale de même périmètre
    (carré crénelé), pour savoir si c'est la fractale qui compte ou seulement la
    longueur du mur.
-5. **Modèle 2D** : sol et plafond adiabatiques, air parfaitement brassé ; le
-   rayonnement entre parois est inclus de façon conventionnelle dans R_si et R_se.
+6. **Passage en 3D** (prévu) : une vraie pièce avec sol et plafond, où l'air chaud
+   monte, ou une fractale en volume. Le modèle 2D actuel sert de base.

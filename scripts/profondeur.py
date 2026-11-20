@@ -1,13 +1,13 @@
 """Régime établi en fonction de la profondeur du flocon de Koch (même aire).
 
 Usage :
-    python3 scripts/profondeur.py              # res_*.csv à la racine
-    python3 scripts/profondeur.py results/v3   # dossier explicite
+    python3 scripts/profondeur.py                     # CSV de la racine
+    python3 scripts/profondeur.py results/v4/regime   # dossier explicite
 
 Lit la ligne de géométrie (« # geometrie=... ») et la dernière ligne de chaque
-res_koch<n>.csv et res_carre.csv (format v3), affiche un tableau et trace la
-conductance de l'enveloppe G = P_ext / (T_air − T_ext) en fonction de la
-profondeur et du périmètre intérieur.
+CSV du dossier (format v3 ou plus récent), affiche un tableau et trace la
+conductance de l'enveloppe G = P_ext / (T_air − T_ext), avec T_air la
+température moyenne de l'air, en fonction de la profondeur et du périmètre.
 """
 import glob
 import os
@@ -43,9 +43,13 @@ def read_run(path):
     }
 
 
-rows = [r for p in glob.glob(os.path.join(results_dir, "res_*.csv")) if (r := read_run(p))]
+# Les regime_*.csv (make regime, grille fine) sont prioritaires sur les
+# séries temporelles (res_*.csv, sessions) du même dossier.
+paths = glob.glob(os.path.join(results_dir, "regime_*.csv")) or \
+        glob.glob(os.path.join(results_dir, "*.csv"))
+rows = [r for p in paths if (r := read_run(p))]
 if not rows:
-    print(f"Aucun CSV au format v3 dans {results_dir} (lancer make data)")
+    print(f"Aucun CSV au format v3 ou plus récent dans {results_dir} (lancer make data)")
     sys.exit(1)
 
 table = pd.DataFrame(rows).sort_values(["profondeur"]).set_index("geometrie")

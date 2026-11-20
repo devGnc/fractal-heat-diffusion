@@ -108,22 +108,31 @@ void surface_geometry(const Sim *s, double x, double y, int outer, double *f, do
     else *delta = inside_polygon(p, s->n_poly, x, y) ? -d : d;
 }
 
-// Remplit zones, matériaux et températures initiales à partir de s->poly,
-// puis calcule les conductances. Utilisé aussi par le test de l'anneau.
+// Remplit zones, matériaux, source et températures initiales à partir de
+// s->poly, puis calcule les conductances. Utilisé aussi par le test de
+// l'anneau. La source est un disque de rayon SOURCE_R centré sur le centre de
+// gravité de la pièce.
 void geometry_from_polygon(Sim *s) {
     const int G = GRID_SIZE;
     const Vec2 *p = s->poly;
     const int n = s->n_poly;
 
-    s->area = s->perimeter = 0.0;
+    // Aire et centre de gravité (formule du polygone), périmètre, cadre
+    double a2 = 0.0, gx = 0.0, gy = 0.0;
+    s->perimeter = 0.0;
     double xmin = INFINITY, xmax = -INFINITY, ymin = INFINITY, ymax = -INFINITY;
     for (int i = 0, j = n - 1; i < n; j = i++) {
-        s->area += p[j].x * p[i].y - p[i].x * p[j].y;
+        double cr = p[j].x * p[i].y - p[i].x * p[j].y;
+        a2 += cr;
+        gx += (p[j].x + p[i].x) * cr;
+        gy += (p[j].y + p[i].y) * cr;
         s->perimeter += hypot(p[i].x - p[j].x, p[i].y - p[j].y);
         xmin = fmin(xmin, p[i].x); xmax = fmax(xmax, p[i].x);
         ymin = fmin(ymin, p[i].y); ymax = fmax(ymax, p[i].y);
     }
-    s->area = fabs(s->area) / 2.0;
+    s->area = fabs(a2) / 2.0;
+    s->src_x = gx / (3.0 * a2);
+    s->src_y = gy / (3.0 * a2);
 
     const double e = WALL_THICKNESS;
     if (xmin - e < DX || ymin - e < DX || xmax + e > (G - 1) * DX || ymax + e > (G - 1) * DX) {
@@ -141,15 +150,25 @@ void geometry_from_polygon(Sim *s) {
                 else if (distance_polygon(p, n, cx, cy) <= e) z = ZONE_WALL;
             }
             s->zones[i] = z;
-            s->lambda[i] = z == ZONE_WALL ? LAMBDA_WALL : 0.0;
-            s->cap[i] = z == ZONE_WALL ? RHOC_WALL * DX * DX : 0.0;
-            s->T[i] = s->Tnext[i] = z == ZONE_EXT ? T_EXT : T_INIT;
+            s->lambda[i] = z == ZONE_WALL ? LAMBDA_WALL : (z == ZONE_INT ? LAMBDA_AIR : 0.0);
+            s->cap[i] = z == ZONE_WALL ? RHOC_WALL * DX * DX
+                      : (z == ZONE_INT ? RHOC_AIR * DX * DX : 0.0);
+            s->T[i] = s->Tstar[i] = z == ZONE_EXT ? T_EXT : T_INIT;
+            s->src[i] = (z == ZONE_INT && hypot(cx - s->src_x, cy - s->src_y) <= SOURCE_R)
+                        ? 1.0 : 0.0;
         }
     }
 
+    // Puissance répartie également entre les cases de la source
+    s->n_src = 0;
+    for (int i = 0; i < G * G; i++) s->n_src += s->src[i] > 0.0;
+    if (s->n_src == 0) {
+        fprintf(stderr, "Erreur : la source ne contient aucune case d'air\n");
+        exit(1);
+    }
+    for (int i = 0; i < G * G; i++) s->src[i] *= s->q_int / s->n_src;
+
     compute_conductances(s);
-    s->T_air = T_INIT;
-    s->C_air = RHOC_AIR * s->n_int * DX * DX;
 }
 
 void init_geometry(Sim *s) {

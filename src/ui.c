@@ -3,46 +3,57 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <time.h>
 
 /*
- * Fenêtre interactive : le carré (référence) et un flocon de Koch, de même
- * aire et avec les mêmes apports de chaleur, simulés côte à côte. Deux vues
- * (température, flux de chaleur dans les murs), chiffres clés sous chaque
- * pièce, légende, courbe de la température de l'air et commandes.
+ * Fenêtre interactive : le carré et un flocon de Koch, de même aire et avec la
+ * même source de chaleur, simulés côte à côte. L'image d'abord : deux grandes
+ * pièces, la température moyenne de l'air sous chacune, une barre de couleurs
+ * et le temps. L'aide (touche H) liste les commandes.
  *
- * Mise en page en unités logiques (points) ; sur un écran Retina, tout est
- * dessiné en pixels physiques (facteur ui.dpi) pour rester net.
+ * Vitesse automatique : le temps simulé par image croît avec le temps écoulé
+ * (2 % de t par image). On voit d'abord la chaleur quitter la source et
+ * remplir la pièce en quelques minutes, puis les murs se réchauffer en
+ * quelques jours. Le pas de temps est plafonné à 30 s (au-delà, l'air,
+ * de capacité très faible, n'est plus amorti correctement) : une image peut
+ * enchaîner plusieurs pas.
+ *
+ * Mise en page en points ; sur un écran Retina, tout est dessiné en pixels
+ * physiques (facteur ui.dpi) pour rester net.
  */
 
 #define WIN_W 1400
-#define WIN_H 700
+#define WIN_H 780
 #define MARGIN 20
-#define PANEL 460                       // côté d'une pièce à l'écran
-#define PANEL_Y 96
-#define SIDE_X (2 * PANEL + 3 * MARGIN) // colonne de droite
-#define SIDE_W (WIN_W - SIDE_X - MARGIN)
-#define HIST_MAX (24 * 20)              // 20 jours, un point par heure
+#define PANEL 670
+#define STRIP_Y (MARGIN + PANEL)
+#define DT_MAX 30.0                     // s : pas de temps maximal
+#define REC_EVERY 600.0                 // s simulées entre deux lignes de CSV
 
-// Itérations par image : 30 s simulées par itération
-static const int SPEEDS[] = { 5, 10, 20, 40, 80, 160, 320 };
+// Vitesses manuelles : temps simulé par image (s)
+static const double SPEEDS[] = { 1, 2, 5, 10, 30, 60, 150, 300, 600, 1200 };
 #define N_SPEEDS (int)(sizeof SPEEDS / sizeof SPEEDS[0])
 
-static const SDL_Color C_BG     = {  18,  20,  26, 255 };
-static const SDL_Color C_PANEL  = {  28,  31,  40, 255 };
-static const SDL_Color C_GRID   = {  55,  60,  74, 255 };
-static const SDL_Color C_TEXT   = { 228, 231, 238, 255 };
-static const SDL_Color C_DIM    = { 140, 147, 162, 255 };
-static const SDL_Color C_REF    = { 150, 190, 255, 255 };  // carré
-static const SDL_Color C_KOCH   = { 255, 172,  92, 255 };  // flocon
-static const SDL_Color C_GOOD   = { 125, 220, 145, 255 };
-static const SDL_Color C_BAD    = { 240, 112, 100, 255 };
+static const SDL_Color C_BG    = {  14,  16,  21, 255 };
+static const SDL_Color C_TEXT  = { 228, 231, 238, 255 };
+static const SDL_Color C_DIM   = { 125, 132, 148, 255 };
+static const SDL_Color C_REF   = { 150, 190, 255, 255 };
+static const SDL_Color C_KOCH  = { 255, 172,  92, 255 };
+static const SDL_Color C_REC   = { 240,  90,  80, 255 };
 
 typedef struct {
     Sim sim;
     SDL_Texture *tex;
-    float hist[HIST_MAX];   // T_air, une valeur par heure simulée
-    int n_hist;
 } Room;
+
+typedef struct {
+    Room rooms[2];          // 0 : carré, 1 : flocon
+    int view, iso, help, paused;
+    int speed;              // -1 : automatique, sinon indice dans SPEEDS
+    char rec_dir[128];      // dossier de la session d'enregistrement ("" : aucune)
+    double next_rec;        // prochain instant d'enregistrement (s)
+} App;
 
 static struct {
     SDL_Renderer *ren;
@@ -65,12 +76,6 @@ static void fill_rect(double x, double y, double w, double h, SDL_Color c) {
     SDL_RenderFillRect(ui.ren, &r);
 }
 
-static void line(double x1, double y1, double x2, double y2, SDL_Color c) {
-    set_color(c);
-    SDL_RenderDrawLine(ui.ren, L(x1), L(y1), L(x2), L(y2));
-}
-
-// Taille de police : nombre de points par pixel de la police (5 × 9)
 static int font_px(double size) {
     int px = (int)lround(size * ui.dpi);
     return px < 1 ? 1 : px;
@@ -84,306 +89,204 @@ static double text_w(double size, const char *s) {
     return text_width(font_px(size), s) / ui.dpi;
 }
 
-static void text_right(double x, double y, double size, SDL_Color c, const char *s) {
-    text(x - text_w(size, s), y, size, c, s);
+// Nombres à la française : virgule décimale
+static void fr(char *buf) {
+    for (char *p = buf; *p; p++) if (*p == '.') *p = ',';
 }
 
-// Nombres à la française : virgule décimale, vrai signe moins
-static void fr(char *buf, size_t n) {
-    char tmp[256];
-    size_t k = 0;
-    for (const char *p = buf; *p && k + 4 < sizeof tmp; p++) {
-        if (*p == '.') tmp[k++] = ',';
-        else if (*p == '-' && (p == buf || p[-1] == ' ' || p[-1] == '(')) {
-            tmp[k++] = (char)0xE2; tmp[k++] = (char)0x88; tmp[k++] = (char)0x92;
-        }
-        else tmp[k++] = *p;
+static void format_time(char *buf, size_t n, double t) {
+    int d = (int)(t / 86400.0), h = (int)fmod(t / 3600.0, 24.0), m = (int)fmod(t / 60.0, 60.0);
+    if (d > 0) snprintf(buf, n, "%d j %02d h", d, h);
+    else if (h > 0) snprintf(buf, n, "%d h %02d min", h, m);
+    else snprintf(buf, n, "%d min %02d s", m, (int)fmod(t, 60.0));
+}
+
+/* ------------------------------------------------------------------------ */
+/* Simulation et enregistrement                                             */
+/* ------------------------------------------------------------------------ */
+
+// Temps simulé par image
+static double frame_span(const App *a) {
+    if (a->speed >= 0) return SPEEDS[a->speed];
+    double span = 0.02 * a->rooms[0].sim.sim_time;
+    return span < 1.0 ? 1.0 : (span > 1200.0 ? 1200.0 : span);
+}
+
+static void stop_recording(App *a) {
+    if (!a->rec_dir[0]) return;
+    for (int k = 0; k < 2; k++) {
+        if (a->rooms[k].sim.csv) fclose(a->rooms[k].sim.csv);
+        a->rooms[k].sim.csv = NULL;
     }
-    tmp[k] = '\0';
-    snprintf(buf, n, "%s", tmp);
+    printf("Enregistrement terminé : %s\n", a->rec_dir);
+    a->rec_dir[0] = '\0';
 }
 
-#define FMT(buf, ...) do { snprintf(buf, sizeof buf, __VA_ARGS__); fr(buf, sizeof buf); } while (0)
-
-/* ------------------------------------------------------------------------ */
-/* Simulation                                                               */
-/* ------------------------------------------------------------------------ */
-
-static void room_reset(Room *r) {
-    sim_reset(&r->sim);
-    r->n_hist = 0;
-    r->hist[r->n_hist++] = (float)r->sim.T_air;
+// Une session = un dossier enregistrements/AAAA-MM-JJ_HHhMMmSS contenant un
+// CSV par pièce (même format que le mode sans fenêtre, lu par les scripts).
+static void start_recording(App *a) {
+    time_t now = time(NULL);
+    char stamp[32];
+    strftime(stamp, sizeof stamp, "%Y-%m-%d_%Hh%Mm%S", localtime(&now));
+    mkdir("enregistrements", 0755);
+    snprintf(a->rec_dir, sizeof a->rec_dir, "enregistrements/%s", stamp);
+    if (mkdir(a->rec_dir, 0755) != 0) {
+        perror(a->rec_dir);
+        a->rec_dir[0] = '\0';
+        return;
+    }
+    for (int k = 0; k < 2; k++) {
+        Sim *s = &a->rooms[k].sim;
+        char g[16], path[192];
+        geom_name(s, g, sizeof g);
+        snprintf(path, sizeof path, "%s/%s.csv", a->rec_dir, g);
+        s->csv = fopen(path, "w");
+        if (!s->csv) { perror(path); continue; }
+        compute_stats(s);
+        s->dt = DT_MAX;  // pas maximal (la vitesse le fait varier en dessous)
+        csv_header(s->csv, s);
+        csv_row(s->csv, s);
+    }
+    a->next_rec = a->rooms[0].sim.sim_time + REC_EVERY;
+    printf("Enregistrement dans %s/ (une ligne toutes les %.0f min simulées)\n",
+           a->rec_dir, REC_EVERY / 60.0);
 }
 
-static void room_step(Room *r, int n_iter) {
-    for (int k = 0; k < n_iter; k++) {
-        step_physics(&r->sim);
-        if (r->sim.iteration % STATS_EVERY == 0) {
-            compute_stats(&r->sim);
-            if (r->n_hist < HIST_MAX) r->hist[r->n_hist++] = (float)r->sim.T_air;
-            if (r->sim.recording) {
-                csv_row(r->sim.csv, &r->sim);
-                fflush(r->sim.csv);
+static void reset_rooms(App *a) {
+    stop_recording(a);
+    for (int k = 0; k < 2; k++) {
+        sim_reset(&a->rooms[k].sim);
+        a->rooms[k].sim.dt = DT_MAX;
+    }
+}
+
+// Avance les deux pièces de `span` secondes, par pas d'au plus DT_MAX
+static void advance(App *a, double span) {
+    int n = (int)ceil(span / DT_MAX - 1e-9);
+    double dt = span / n;
+    for (int s = 0; s < n; s++) {
+        for (int k = 0; k < 2; k++) {
+            a->rooms[k].sim.dt = dt;
+            step_physics(&a->rooms[k].sim);
+        }
+        if (a->rec_dir[0] && a->rooms[0].sim.sim_time >= a->next_rec - 1e-6) {
+            for (int k = 0; k < 2; k++) {
+                Sim *sim = &a->rooms[k].sim;
+                compute_stats(sim);
+                if (sim->csv) { csv_row(sim->csv, sim); fflush(sim->csv); }
+            }
+            a->next_rec += REC_EVERY;
+        }
+    }
+    for (int k = 0; k < 2; k++) compute_stats(&a->rooms[k].sim);
+}
+
+/* ------------------------------------------------------------------------ */
+/* Dessin                                                                   */
+/* ------------------------------------------------------------------------ */
+
+static void draw_room(App *a, int k, double x) {
+    Room *r = &a->rooms[k];
+    Sim *s = &r->sim;
+    fill_pixels(s, a->view);
+
+    // Isothermes tous les 1 °C : on assombrit les cases où le degré entier
+    // change par rapport au voisin de droite ou du dessous.
+    if (a->iso && a->view == VIEW_TEMP) {
+        const int G = GRID_SIZE;
+        for (int i = 0; i < G * (G - 1); i++) {
+            if (s->zones[i] == ZONE_EXT || (i % G) == G - 1) continue;
+            int li = (int)floor(s->T[i] - T_EXT);
+            int lr = s->zones[i + 1] != ZONE_EXT ? (int)floor(s->T[i + 1] - T_EXT) : li;
+            int ld = s->zones[i + G] != ZONE_EXT ? (int)floor(s->T[i + G] - T_EXT) : li;
+            if (li != lr || li != ld) {
+                uint32_t p = s->pixels[i];
+                uint32_t rr = ((p >> 16) & 0xFF) * 3 / 5, gg = ((p >> 8) & 0xFF) * 3 / 5,
+                         bb = (p & 0xFF) * 3 / 5;
+                s->pixels[i] = 0xFF000000u | (rr << 16) | (gg << 8) | bb;
             }
         }
     }
-    compute_stats(&r->sim);
-}
 
-static double room_G(const Room *r) {
-    double dT = r->sim.T_air - T_EXT;
-    return dT > 0.05 ? r->sim.stat_p_ext / dT : NAN;
-}
-
-static int room_steady(const Room *r) {
-    return fabs(r->sim.stat_p_ext - r->sim.q_int) < 1e-3 * r->sim.q_int;
-}
-
-static void stop_recording(Room *r) {
-    if (!r->sim.recording) return;
-    fclose(r->sim.csv);
-    r->sim.csv = NULL;
-    r->sim.recording = 0;
-}
-
-static void start_recording(Room *r) {
-    char g[16], name[64];
-    geom_name(&r->sim, g, sizeof g);
-    snprintf(name, sizeof name, "res_%s.csv", g);
-    r->sim.csv = fopen(name, "w");
-    if (!r->sim.csv) return;
-    csv_header(r->sim.csv, &r->sim);
-    csv_row(r->sim.csv, &r->sim);
-    r->sim.recording = 1;
-    printf("Enregistrement vers %s\n", name);
-}
-
-/* ------------------------------------------------------------------------ */
-/* Éléments de l'interface                                                  */
-/* ------------------------------------------------------------------------ */
-
-static void draw_room(Room *r, double x, int view, const char *label, SDL_Color accent) {
-    // Titre au-dessus de la pièce
-    fill_rect(x, PANEL_Y - 24, 6, 14, accent);
-    text(x + 14, PANEL_Y - 25, 1.75, C_TEXT, label);
-
-    // Image de la grille
-    fill_pixels(&r->sim, view);
-    SDL_UpdateTexture(r->tex, NULL, r->sim.pixels, GRID_SIZE * sizeof(uint32_t));
-    SDL_Rect dst = { L(x), L(PANEL_Y), L(x + PANEL) - L(x), L(PANEL_Y + PANEL) - L(PANEL_Y) };
+    SDL_UpdateTexture(r->tex, NULL, s->pixels, GRID_SIZE * sizeof(uint32_t));
+    SDL_Rect dst = { L(x), L(MARGIN), L(x + PANEL) - L(x), L(MARGIN + PANEL) - L(MARGIN) };
     SDL_RenderCopy(ui.ren, r->tex, NULL, &dst);
 
-    // Barre d'échelle de 1 m
-    double m = PANEL / (GRID_SIZE * DX);  // points par mètre
-    double bx = x + 14, by = PANEL_Y + PANEL - 16;
-    line(bx, by, bx + m, by, C_TEXT);
-    line(bx, by - 4, bx, by + 1, C_TEXT);
-    line(bx + m, by - 4, bx + m, by + 1, C_TEXT);
-    text(bx + m + 6, by - 7, 1.25, C_TEXT, "1 m");
+    // Sous la pièce : son nom et la température moyenne de l'air
+    char name[48], temp[32];
+    if (s->mode) snprintf(name, sizeof name, "Flocon de Koch %d", s->depth);
+    else snprintf(name, sizeof name, "Carré");
+    snprintf(temp, sizeof temp, "%.1f °C", s->stat_T_air);
+    fr(temp);
+    double y = STRIP_Y + 12;
+    fill_rect(x, y + 3, 5, 14, k ? C_KOCH : C_REF);
+    double w = text(x + 13, y + 2, 2.0, C_TEXT, name);
+    text(x + 13 + w + 18, y - 3, 3.0, temp_color(s->stat_T_air), temp);
 }
 
-static void draw_room_info(const Room *r, const Room *ref, double x) {
-    const Sim *s = &r->sim;
-    char buf[128];
-    double y = PANEL_Y + PANEL + 14;
+static void draw_strip(const App *a) {
+    char buf[64];
+    double y = STRIP_Y + 54;
 
-    text(x, y, 1.5, C_DIM, "Température de l'air");
-    FMT(buf, "%.1f °C", s->T_air);
-    text(x, y + 18, 4.0, temp_color(s->T_air), buf);
-
-    // G = P/(T_air − T_ext) n'est la conductance de la pièce qu'en régime
-    // établi : pendant la montée en température, la valeur est provisoire.
-    double cx = x + 200;
-    double G = room_G(r);
-    int steady = room_steady(r) && room_steady(ref);
-    if (isnan(G)) snprintf(buf, sizeof buf, "G = ...");
-    else if (steady) FMT(buf, "G = %.1f W/(m·K)", G);
-    else FMT(buf, "G provisoire : %.1f W/(m·K)", G);
-    text(cx, y - 2, 1.5, steady ? C_TEXT : C_DIM, buf);
-    FMT(buf, "Longueur de mur : %.1f m", s->perimeter);
-    text(cx, y + 16, 1.5, C_DIM, buf);
-    FMT(buf, "Chaleur évacuée : %.0f W/m", s->stat_p_ext);
-    text(cx, y + 34, 1.5, C_DIM, buf);
-    FMT(buf, "Par mètre de mur : %.1f W/m²", s->stat_p_ext / s->perimeter);
-    text(cx, y + 52, 1.5, C_DIM, buf);
-
-    y += 74;
-    if (r == ref) {
-        text(x, y, 1.5, C_DIM, "Référence : la forme la plus compacte");
-        text(x, y + 20, 1.5, C_DIM, "(périmètre minimal pour 4 côtés droits)");
-        return;
-    }
-    double dT = s->T_air - ref->sim.T_air;
-    FMT(buf, "Écart avec le carré : %+.1f °C", dT);
-    text(x, y, 1.5, dT <= 0 ? C_GOOD : C_BAD, buf);
-    double Gr = room_G(ref);
-    if (!steady) {
-        text(x, y + 20, 1.5, C_DIM, "Gain par degré : attendre le régime établi");
-    } else if (!isnan(G) && !isnan(Gr)) {
-        double gain = 100.0 * (G / Gr - 1.0);
-        if (gain >= 0) FMT(buf, "Évacue %.0f %% de chaleur en plus par degré", gain);
-        else FMT(buf, "Évacue %.0f %% de chaleur en moins par degré", -gain);
-        text(x, y + 20, 1.5, gain >= 0 ? C_GOOD : C_BAD, buf);
-    }
-}
-
-static void draw_legend(double x, double y, int view) {
-    const double w = SIDE_W, h = 16;
-    text(x, y, 1.75, C_TEXT, view == VIEW_TEMP ? "Vue : température" : "Vue : flux de chaleur");
-    y += 26;
-
-    // Dégradé, colonne de pixels physiques par colonne
-    int x0 = L(x), x1 = L(x + w);
-    for (int px = x0; px < x1; px++) {
-        double t = (px - x0) / (double)(x1 - x0 - 1);
-        SDL_Color c = view == VIEW_TEMP ? temp_color(T_EXT + t * (T_DISPLAY_MAX - T_EXT))
-                                        : flux_color(t * FLUX_DISPLAY_MAX);
+    // Barre de couleurs au centre
+    const double w = 420, h = 10, x0 = (WIN_W - w) / 2;
+    int p0 = L(x0), p1 = L(x0 + w);
+    for (int px = p0; px < p1; px++) {
+        double t = (px - p0) / (double)(p1 - p0 - 1);
+        SDL_Color c = a->view == VIEW_TEMP ? temp_color(T_EXT + t * (T_DISPLAY_MAX - T_EXT))
+                                           : flux_color(t * FLUX_DISPLAY_MAX);
         set_color(c);
         SDL_RenderDrawLine(ui.ren, px, L(y), px, L(y + h) - 1);
     }
+    const char *lo = a->view == VIEW_TEMP ? "20 °C" : "0";
+    char hi[40];
+    if (a->view == VIEW_TEMP) snprintf(hi, sizeof hi, "%.0f °C", T_DISPLAY_MAX);
+    else snprintf(hi, sizeof hi, "%.0f W/m² dans les murs", FLUX_DISPLAY_MAX);
+    text(x0 - text_w(1.5, lo) - 10, y - 2, 1.5, C_DIM, lo);
+    text(x0 + w + 10, y - 2, 1.5, C_DIM, hi);
 
-    // Graduations
-    char buf[32];
-    int n = view == VIEW_TEMP ? 5 : 6;
-    for (int k = 0; k <= n; k++) {
-        double tx = x + w * k / n;
-        line(tx, y + h, tx, y + h + 4, C_DIM);
-        if (view == VIEW_TEMP) FMT(buf, "%.0f", T_EXT + k * (T_DISPLAY_MAX - T_EXT) / n);
-        else FMT(buf, "%.0f", k * FLUX_DISPLAY_MAX / n);
-        double tw = text_w(1.25, buf);
-        double lx = k == 0 ? tx : (k == n ? tx - tw : tx - tw / 2);
-        text(lx, y + h + 7, 1.25, C_DIM, buf);
-    }
-    text_right(x + w, y + h + 22, 1.25, C_DIM, view == VIEW_TEMP ? "°C" : "W/m²");
-
-    y += h + 42;
-    const char *lines_t[] = {
-        "L'air est brassé : une seule température.",
-        "Le dégradé dans les murs montre la chaleur",
-        "qui traverse le béton vers l'extérieur.",
-        "Touche F : voir où la chaleur sort.",
-    };
-    const char *lines_f[] = {
-        "Intensité du flux de chaleur dans les murs.",
-        "Clair : le mur évacue beaucoup (pointes) ;",
-        "sombre : il évacue peu (creux étroits).",
-        "Chaque mètre de mur du flocon évacue moins,",
-        "mais le flocon a beaucoup plus de mur.",
-    };
-    int n_lines = view == VIEW_TEMP ? 4 : 5;
-    for (int k = 0; k < n_lines; k++)
-        text(x, y + 18 * k, 1.5, C_TEXT, view == VIEW_TEMP ? lines_t[k] : lines_f[k]);
+    // Temps à gauche, aide à droite
+    format_time(buf, sizeof buf, a->rooms[0].sim.sim_time);
+    double tx = MARGIN + text(MARGIN, y - 4, 2.0, C_TEXT, buf);
+    if (a->paused) text(tx + 14, y - 1, 1.5, C_DIM, "pause");
+    else if (a->rec_dir[0]) text(tx + 14, y - 1, 1.5, C_REC, "REC");
+    const char *hint = "H : aide";
+    text(WIN_W - MARGIN - text_w(1.5, hint), y - 1, 1.5, C_DIM, hint);
 }
 
-static void draw_graph(double x, double y, const Room *ref, const Room *koch) {
-    const double w = SIDE_W, h = 190;
-    char buf[32];
-    text(x, y, 1.75, C_TEXT, "Température de l'air (°C)");
-    y += 24;
-    fill_rect(x, y, w, h, C_PANEL);
-
-    const double gx = x + 34, gy = y + 10, gw = w - 44, gh = h - 50;
-    const double tmin = T_EXT, tmax = T_DISPLAY_MAX;
-
-    // Durée affichée : au moins 2 jours, arrondie au jour supérieur
-    int n = ref->n_hist > koch->n_hist ? ref->n_hist : koch->n_hist;
-    int days = (int)ceil((n - 1) / 24.0);
-    if (days < 2) days = 2;
-    int step = days > 10 ? 2 : 1;
-
-    for (int k = 0; k <= 5; k++) {
-        double ty = gy + gh - gh * k / 5.0;
-        line(gx, ty, gx + gw, ty, C_GRID);
-        FMT(buf, "%.0f", tmin + k * (tmax - tmin) / 5.0);
-        text_right(gx - 6, ty - 5, 1.25, C_DIM, buf);
-    }
-    for (int d = 0; d <= days; d += step) {
-        double tx = gx + gw * d / days;
-        line(tx, gy + gh, tx, gy + gh + 4, C_DIM);
-        FMT(buf, "%d", d);
-        text(tx - text_w(1.25, buf) / 2, gy + gh + 7, 1.25, C_DIM, buf);
-    }
-    const char *xl = "temps (jours)";
-    text(gx + (gw - text_w(1.25, xl)) / 2, gy + gh + 23, 1.25, C_DIM, xl);
-
-    const Room *rooms[2] = { ref, koch };
-    const SDL_Color cols[2] = { C_REF, C_KOCH };
-    for (int r = 0; r < 2; r++) {
-        SDL_Point pts[HIST_MAX];
-        int m = rooms[r]->n_hist;
-        for (int k = 0; k < m; k++) {
-            double t = fmin(fmax(rooms[r]->hist[k], tmin), tmax);
-            pts[k].x = L(gx + gw * (k / 24.0) / days);
-            pts[k].y = L(gy + gh - gh * (t - tmin) / (tmax - tmin));
-        }
-        set_color(cols[r]);
-        for (int dy = 0; dy < (ui.dpi > 1.5 ? 2 : 1); dy++) {
-            for (int k = 0; k < m; k++) pts[k].y += dy;
-            SDL_RenderDrawLines(ui.ren, pts, m);
-        }
-    }
-
-    // Légende
-    double ly = y + h + 8;
-    fill_rect(x, ly + 5, 18, 3, C_REF);
-    text(x + 24, ly, 1.5, C_TEXT, "Carré");
-    FMT(buf, "Koch, profondeur %d", koch->sim.depth);
-    fill_rect(x + 110, ly + 5, 18, 3, C_KOCH);
-    text(x + 134, ly, 1.5, C_TEXT, buf);
-
-}
-
-static void draw_controls(double x, double y, int speed, int paused, int recording) {
-    char buf[64];
-    text(x, y, 1.75, C_TEXT, "Commandes");
-    y += 26;
-    double mins = SPEEDS[speed] * DT / 60.0;
-    char rate[32];
-    if (mins < 60) FMT(rate, "%.0f min", mins);
-    else FMT(rate, "%.1f h", mins / 60.0);
-    FMT(buf, "vitesse (%s par image)", rate);
-    const char *keys[] = { "0 à 4", "F", "Espace", "+ / -", "R", "S", "Q" };
-    const char *what[] = { "profondeur du flocon", "température / flux",
-                           paused ? "reprendre" : "pause", buf, "recommencer",
-                           recording ? "arrêter l'enregistrement" : "enregistrer en CSV",
-                           "quitter" };
-    for (int k = 0; k < 7; k++) {
-        text(x, y + 19 * k, 1.5, C_KOCH, keys[k]);
-        text(x + 80, y + 19 * k, 1.5, C_TEXT, what[k]);
+static void draw_help(const App *a) {
+    const double w = 520, h = 300, x = (WIN_W - w) / 2, y = (STRIP_Y - h) / 2;
+    fill_rect(x, y, w, h, (SDL_Color){ 10, 12, 16, 235 });
+    text(x + 24, y + 20, 2.0, C_TEXT, "Commandes");
+    char speed[64];
+    if (a->speed < 0) snprintf(speed, sizeof speed, "vitesse (auto)");
+    else snprintf(speed, sizeof speed, "vitesse (%g s par image)", SPEEDS[a->speed]);
+    const char *keys[] = { "Espace", "+ / -", "A", "0 à 4", "F", "I", "S", "R", "Q" };
+    const char *what[] = { "pause", speed, "vitesse automatique", "profondeur du flocon",
+                           "température / flux dans les murs", "isothermes (1 °C)",
+                           a->rec_dir[0] ? "arrêter l'enregistrement" : "enregistrer (CSV)",
+                           "recommencer", "quitter" };
+    for (int k = 0; k < 9; k++) {
+        text(x + 24, y + 56 + 24 * k, 1.5, C_KOCH, keys[k]);
+        text(x + 124, y + 56 + 24 * k, 1.5, C_TEXT, what[k]);
     }
 }
 
-static void draw_header(const Room *ref, const Room *koch, int paused, int recording) {
-    char buf[128];
-    text(MARGIN, 14, 2.5, C_TEXT, "Même aire, même chaleur produite : quelle forme évacue le mieux ?");
-    FMT(buf, "Pièces de %.0f m², murs en béton de %.0f cm, %.0f W/m d'apports internes, "
-             "extérieur à %.0f °C", ROOM_AREA, 100 * WALL_THICKNESS, Q_INT, T_EXT);
-    text(MARGIN, 44, 1.5, C_DIM, buf);
-
-    double t = ref->sim.sim_time;
-    int d = (int)(t / 86400.0), h = (int)fmod(t / 3600.0, 24.0);
-    snprintf(buf, sizeof buf, "t = %d j %02d h", d, h);
-    text_right(WIN_W - MARGIN, 12, 2.5, C_TEXT, buf);
-    const char *status = paused ? "PAUSE" : (room_steady(ref) && room_steady(koch)) ?
-                         "régime établi" : "en cours";
-    SDL_Color sc = paused ? C_BAD : (room_steady(ref) && room_steady(koch)) ? C_GOOD : C_DIM;
-    text_right(WIN_W - MARGIN, 44, 1.5, sc, status);
-    if (recording) {
-        double w = text_w(1.5, status);
-        text_right(WIN_W - MARGIN - w - 16, 44, 1.5, C_BAD, "REC");
-    }
+static void draw_frame(App *a) {
+    set_color(C_BG);
+    SDL_RenderClear(ui.ren);
+    draw_room(a, 0, MARGIN);
+    draw_room(a, 1, 2 * MARGIN + PANEL);
+    draw_strip(a);
+    if (a->help) draw_help(a);
 }
 
 /* ------------------------------------------------------------------------ */
-/* Boucle principale                                                        */
+/* Initialisation et boucle                                                 */
 /* ------------------------------------------------------------------------ */
-
-typedef struct {
-    Room rooms[2];          // 0 : carré, 1 : flocon
-    int view, speed, paused;
-} App;
 
 static int app_init(App *a, SDL_Renderer *ren, int depth) {
+    memset(a, 0, sizeof *a);
     ui.ren = ren;
     SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
     if (!font_init(ren)) {
@@ -403,38 +306,20 @@ static int app_init(App *a, SDL_Renderer *ren, int depth) {
     a->rooms[0].sim.mode = 0;
     a->rooms[1].sim.mode = 1;
     a->rooms[1].sim.depth = depth;
-    room_reset(&a->rooms[0]);
-    room_reset(&a->rooms[1]);
     a->view = VIEW_TEMP;
-    a->speed = 2;
-    a->paused = 0;
+    a->iso = 1;
+    a->speed = -1;
+    reset_rooms(a);
     return 1;
 }
 
 static void app_free(App *a) {
+    stop_recording(a);
     for (int k = 0; k < 2; k++) {
-        stop_recording(&a->rooms[k]);
         if (a->rooms[k].tex) SDL_DestroyTexture(a->rooms[k].tex);
         sim_free(&a->rooms[k].sim);
     }
     font_free();
-}
-
-static void draw_frame(App *a) {
-    Room *ref = &a->rooms[0], *koch = &a->rooms[1];
-    set_color(C_BG);
-    SDL_RenderClear(ui.ren);
-
-    char label[64];
-    snprintf(label, sizeof label, "Flocon de Koch, profondeur %d", koch->sim.depth);
-    draw_header(ref, koch, a->paused, ref->sim.recording);
-    draw_room(ref, MARGIN, a->view, "Carré", C_REF);
-    draw_room(koch, 2 * MARGIN + PANEL, a->view, label, C_KOCH);
-    draw_room_info(ref, ref, MARGIN);
-    draw_room_info(koch, ref, 2 * MARGIN + PANEL);
-    draw_legend(SIDE_X, PANEL_Y - 25, a->view);
-    draw_graph(SIDE_X, PANEL_Y + 168, ref, koch);
-    draw_controls(SIDE_X, PANEL_Y + 428, a->speed, a->paused, ref->sim.recording);
 }
 
 int run_gui(void) {
@@ -457,11 +342,7 @@ int run_gui(void) {
 
     static App app;
     if (!app_init(&app, ren, KOCH_DEPTH_REF + 1)) return 1;
-    Room *ref = &app.rooms[0], *koch = &app.rooms[1];
-    check_stability(&koch->sim);
-    printf("Fenêtre : carré et flocon de Koch côte à côte (Δx = %.1f cm, Δt = %.0f s).\n"
-           "Touches : 0-4 profondeur, F vue, Espace pause, +/- vitesse, R, S, Q.\n",
-           100.0 * DX, (double)DT);
+    printf("Carré et flocon de Koch côte à côte. H : aide, S : enregistrer, Q : quitter.\n");
 
     int running = 1;
     while (running) {
@@ -471,38 +352,33 @@ int run_gui(void) {
             if (e.type != SDL_KEYDOWN) continue;
             SDL_Keycode k = e.key.keysym.sym;
             if (k == SDLK_q || k == SDLK_ESCAPE) running = 0;
+            else if (k == SDLK_h) app.help = !app.help;
             else if (k == SDLK_f) app.view = !app.view;
+            else if (k == SDLK_i) app.iso = !app.iso;
             else if (k == SDLK_SPACE) app.paused = !app.paused;
-            else if (k == SDLK_PLUS || k == SDLK_EQUALS || k == SDLK_KP_PLUS) {
-                if (app.speed < N_SPEEDS - 1) app.speed++;
-            }
-            else if (k == SDLK_MINUS || k == SDLK_KP_MINUS) {
-                if (app.speed > 0) app.speed--;
+            else if (k == SDLK_a) app.speed = -1;
+            else if (k == SDLK_PLUS || k == SDLK_EQUALS || k == SDLK_KP_PLUS ||
+                     k == SDLK_MINUS || k == SDLK_KP_MINUS) {
+                int up = !(k == SDLK_MINUS || k == SDLK_KP_MINUS);
+                if (app.speed < 0) {  // depuis l'automatique : vitesse la plus proche
+                    double span = frame_span(&app);
+                    app.speed = 0;
+                    while (app.speed < N_SPEEDS - 1 && SPEEDS[app.speed] < span) app.speed++;
+                }
+                if (up && app.speed < N_SPEEDS - 1) app.speed++;
+                if (!up && app.speed > 0) app.speed--;
             }
             else if (k == SDLK_r || (k >= SDLK_0 && k <= SDLK_0 + KOCH_DEPTH_MAX)) {
-                // Les deux pièces repartent ensemble : les courbes restent comparables
-                stop_recording(ref);
-                stop_recording(koch);
-                if (k != SDLK_r) koch->sim.depth = k - SDLK_0;
-                room_reset(ref);
-                room_reset(koch);
+                if (k != SDLK_r) app.rooms[1].sim.depth = k - SDLK_0;
+                reset_rooms(&app);
             }
             else if (k == SDLK_s) {
-                if (ref->sim.recording) {
-                    stop_recording(ref);
-                    stop_recording(koch);
-                    printf("Enregistrement arrêté.\n");
-                } else {
-                    start_recording(ref);
-                    start_recording(koch);
-                }
+                if (app.rec_dir[0]) stop_recording(&app);
+                else start_recording(&app);
             }
         }
 
-        if (!app.paused) {
-            room_step(ref, SPEEDS[app.speed]);
-            room_step(koch, SPEEDS[app.speed]);
-        }
+        if (!app.paused) advance(&app, frame_span(&app));
         draw_frame(&app);
         SDL_RenderPresent(ren);
     }
@@ -528,14 +404,12 @@ int capture_gui(const char *path, int depth, int view, double hours) {
     static App app;
     if (!app_init(&app, ren, depth)) return 1;
     app.view = view;
-    long n = (long)lround(hours * 3600.0 / DT);
-    room_step(&app.rooms[0], (int)n);
-    room_step(&app.rooms[1], (int)n);
+    if (hours > 0) advance(&app, hours * 3600.0);
     draw_frame(&app);
     SDL_RenderPresent(ren);
     int ok = SDL_SaveBMP(surf, path) == 0;
     if (!ok) fprintf(stderr, "Enregistrement de %s : %s\n", path, SDL_GetError());
-    else printf("Image enregistrée : %s (t = %.0f h)\n", path, hours);
+    else printf("Image enregistrée : %s (t = %g h)\n", path, hours);
     app_free(&app);
     SDL_DestroyRenderer(ren);
     SDL_FreeSurface(surf);

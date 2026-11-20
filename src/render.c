@@ -65,12 +65,22 @@ static uint32_t pack(SDL_Color c) {
     return (255u << 24) | ((uint32_t)c.r << 16) | ((uint32_t)c.g << 8) | c.b;
 }
 
+// Vue température : les murs sont assombris (même teinte, 70 % de la
+// luminosité) pour que la forme de la pièce se lise même quand l'air et les
+// murs ont la même température.
 void fill_pixels(Sim *s, int view) {
     const uint32_t ext = 0xFF101218, air_flux = 0xFF2A2E38;
     for (int i = 0; i < GRID_SIZE * GRID_SIZE; i++) {
         uint8_t z = s->zones[i];
         if (z == ZONE_EXT) s->pixels[i] = ext;
-        else if (view == VIEW_TEMP) s->pixels[i] = pack(temp_color(s->T[i]));
+        else if (view == VIEW_TEMP) {
+            SDL_Color c = temp_color(s->T[i]);
+            if (z == ZONE_WALL) {
+                c.r = (uint8_t)(c.r * 7 / 10); c.g = (uint8_t)(c.g * 7 / 10);
+                c.b = (uint8_t)(c.b * 7 / 10);
+            }
+            s->pixels[i] = pack(c);
+        }
         else if (z == ZONE_INT) s->pixels[i] = air_flux;
         else s->pixels[i] = pack(flux_color(wall_flux(s, i)));
     }

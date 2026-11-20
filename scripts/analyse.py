@@ -1,12 +1,17 @@
-"""Trace l'évolution temporelle de chaque simulation.
+"""Trace l'évolution temporelle de chaque simulation d'un dossier.
 
 Usage :
-    python3 scripts/analyse.py                 # res_*.csv à la racine, sinon results/v3
-    python3 scripts/analyse.py results/v2      # dossier explicite
+    python3 scripts/analyse.py                                  # voir ci-dessous
+    python3 scripts/analyse.py enregistrements/2026-11-20_15h02m10
+    python3 scripts/analyse.py results/v4
 
-Chaque fichier res_<geometrie>.csv du dossier donne une courbe. Format v3 :
-température de l'air et puissance évacuée par les murs en fonction du temps
-(heures). Les anciens formats (v0 à v2, unités de grille) restent lisibles.
+Sans argument : les res_*.csv de la racine (mode sans fenêtre), sinon la
+dernière session enregistrée depuis la fenêtre (touche S), sinon results/v4.
+
+Chaque CSV du dossier (res_carre.csv ou carre.csv, koch3.csv…) donne une
+courbe : température moyenne de l'air et puissance évacuée par les murs en
+fonction du temps (heures). Les anciens formats (v0 à v2, unités de grille)
+restent lisibles.
 """
 import glob
 import os
@@ -25,7 +30,10 @@ def find_results_dir():
         return os.path.abspath(sys.argv[1])
     if glob.glob(os.path.join(repo_dir, "res_*.csv")):
         return repo_dir
-    return os.path.join(repo_dir, "results", "v3")
+    sessions = sorted(glob.glob(os.path.join(repo_dir, "enregistrements", "*", "")))
+    if sessions:
+        return sessions[-1]
+    return os.path.join(repo_dir, "results", "v4")
 
 
 def sort_key(name):
@@ -40,14 +48,18 @@ def label(name):
 
 
 results_dir = find_results_dir()
-paths = glob.glob(os.path.join(results_dir, "res_*.csv"))
+# Les regime_*.csv (une seule ligne, régime établi) sont pour profondeur.py
+paths = [p for p in glob.glob(os.path.join(results_dir, "*.csv"))
+         if not os.path.basename(p).startswith("regime_")]
 if not paths:
-    print(f"Aucun fichier res_*.csv dans {results_dir}")
+    print(f"Aucun fichier CSV dans {results_dir}")
     sys.exit(1)
 
 runs = {}
 for path in paths:
-    name = os.path.basename(path)[len("res_"):-len(".csv")]
+    name = os.path.basename(path)[:-len(".csv")]
+    if name.startswith("res_"):
+        name = name[len("res_"):]
     runs[name] = pd.read_csv(path, comment="#")
 names = sorted(runs, key=sort_key)
 print(f"Données lues dans : {results_dir} ({', '.join(names)})")
@@ -55,7 +67,7 @@ print(f"Données lues dans : {results_dir} ({', '.join(names)})")
 v3 = all("T_air" in df for df in runs.values())
 if v3:
     time_col, temp_col, power_col = "Time_h", "T_air", "P_ext"
-    temp_label = r"Température de l'air $T_{air}$ (°C)"
+    temp_label = r"Température moyenne de l'air $T_{air}$ (°C)"
     power_label = "Puissance évacuée par les murs (W/m)"
     time_label = "Temps simulé (h)"
 else:
