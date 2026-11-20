@@ -17,7 +17,7 @@ HDR = $(wildcard $(SRCDIR)/*.h)
 # Fichiers objets (dans build/)
 OBJ = $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.o,$(SRC))
 
-.PHONY: all clean run plot data regime test rapport
+.PHONY: all clean run plot data regime loi test rapport
 
 all: $(TARGET)
 
@@ -49,9 +49,17 @@ $(FINE): $(SRC) $(HDR) | $(BUILDDIR)
 regime: $(FINE)
 	@for g in $(GEOMETRIES); do ./$(FINE) --regime $$g || exit 1; done
 
+# Loi de la profondeur optimale : régime établi sur la grille fine pour 27
+# épaisseurs de mur et 3 aires, flocons, carrés crénelés et îles de Minkowski
+# (≈ 800 calculs, une heure environ). Complète results/v4/loi/loi.csv et
+# reprend là où il s'était arrêté.
+loi: $(FINE)
+	python3 scripts/balayage.py
+
 plot:
 	python3 scripts/analyse.py
 	python3 scripts/profondeur.py
+	python3 scripts/loi.py
 
 # Test de validation : pièce circulaire comparée à la solution exacte, à
 # plusieurs résolutions s (Δx = 5 cm / s).

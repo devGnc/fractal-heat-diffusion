@@ -24,8 +24,10 @@
  * verticales et horizontales, et S la source :
  *   C dT/dt = A_x T + A_y T + S
  */
-static double face_conductance(const Sim *s, int i, int j) {
+// f_out : facteur d'escalier de la face (1 hors des surfaces)
+static double face_conductance(const Sim *s, int i, int j, double *f_out) {
     uint8_t zi = s->zones[i], zj = s->zones[j];
+    *f_out = 1.0;
     if (zi > zj) {  // ordre : EXT < WALL < INT
         int t = i; i = j; j = t;
         uint8_t u = zi; zi = zj; zj = u;
@@ -43,6 +45,7 @@ static double face_conductance(const Sim *s, int i, int j) {
     int w = outer ? j : i;  // case de mur
     double f = 1.0, delta = 0.0, lam = s->lambda[w];
     if (!s->raw_surfaces) surface_geometry(s, xm, ym, outer, &f, &delta);
+    *f_out = f;
     double r = (outer ? s->r_se : s->r_si) + delta / lam;
     // Garde-fou : la demi-case ne peut pas être annulée par un excès de mur
     double denom = fmax(r * f + DX / (2.0 * lam), DX / (8.0 * lam));
@@ -53,13 +56,15 @@ static double face_conductance(const Sim *s, int i, int j) {
 void compute_conductances(Sim *s) {
     const int G = GRID_SIZE;
     s->n_int = s->n_wall = s->n_faces_int_wall = s->n_faces_wall_ext = 0;
+    s->len_int = s->len_ext = 0.0;
     for (int i = 0; i < G * G; i++) s->g_ext[i] = 0.0;
 
     for (int y = 0; y < G; y++) {
         for (int x = 0; x < G; x++) {
             int i = y * G + x;
-            s->kx[i] = (x + 1 < G) ? face_conductance(s, i, i + 1) : 0.0;
-            s->ky[i] = (y + 1 < G) ? face_conductance(s, i, i + G) : 0.0;
+            double f[2] = { 1.0, 1.0 };
+            s->kx[i] = (x + 1 < G) ? face_conductance(s, i, i + 1, &f[0]) : 0.0;
+            s->ky[i] = (y + 1 < G) ? face_conductance(s, i, i + G, &f[1]) : 0.0;
 
             if (s->zones[i] == ZONE_INT) s->n_int++;
             if (s->zones[i] == ZONE_WALL) s->n_wall++;
@@ -75,10 +80,15 @@ void compute_conductances(Sim *s) {
                     fprintf(stderr, "Erreur : l'air touche l'extérieur en (%d, %d)\n", x, y);
                     exit(1);
                 }
-                if ((a == ZONE_WALL && b == ZONE_INT) || (a == ZONE_INT && b == ZONE_WALL))
+                if ((a == ZONE_WALL && b == ZONE_INT) || (a == ZONE_INT && b == ZONE_WALL)) {
                     s->n_faces_int_wall++;
-                if (a == ZONE_WALL && b == ZONE_EXT) { s->g_ext[i] += k[m]; s->n_faces_wall_ext++; }
-                if (a == ZONE_EXT && b == ZONE_WALL) { s->g_ext[j] += k[m]; s->n_faces_wall_ext++; }
+                    s->len_int += DX / f[m];
+                }
+                if ((a == ZONE_WALL && b == ZONE_EXT) || (a == ZONE_EXT && b == ZONE_WALL)) {
+                    s->g_ext[a == ZONE_WALL ? i : j] += k[m];
+                    s->n_faces_wall_ext++;
+                    s->len_ext += DX / f[m];
+                }
             }
         }
     }

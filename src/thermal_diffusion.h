@@ -44,7 +44,7 @@ enum { ZONE_EXT = 0, ZONE_WALL = 1, ZONE_INT = 2 };
 // grandeur du brassage d'une pièce chauffée. Air immobile : 0,026 W/(m·K).
 #define LAMBDA_AIR  100.0       // W/(m·K)
 #ifndef WALL_THICKNESS
-#define WALL_THICKNESS 0.20     // m
+#define WALL_THICKNESS 0.20     // m : valeur par défaut (option --epaisseur)
 #endif
 
 // Résistances superficielles, flux horizontal (ISO 6946), en m²·K/W
@@ -57,7 +57,8 @@ enum { ZONE_EXT = 0, ZONE_WALL = 1, ZONE_INT = 2 };
 #define Q_INT  800.0            // W/m : soit 2 kW pour 2,5 m de haut (≈ 55 W/m²)
 #define SOURCE_R 0.30           // m : rayon de la source
 
-// Même aire intérieure pour toutes les géométries
+// Même aire intérieure pour toutes les géométries : valeur par défaut
+// (option --aire)
 #define ROOM_AREA 36.0          // m² (carré de 6 m de côté)
 
 // Pas de temps par défaut. Le schéma est implicite (directions alternées) :
@@ -68,10 +69,19 @@ enum { ZONE_EXT = 0, ZONE_WALL = 1, ZONE_INT = 2 };
 #define T_DISPLAY_MAX 34.0      // °C (le bas de l'échelle est T_EXT)
 #define FLUX_DISPLAY_MAX 60.0   // W/m²
 
-// Profondeur de Koch par défaut (« fractal ») et profondeur maximale
+// Géométries (champ mode de Sim) :
+//   carré ; flocon de Koch (profondeur 0 à 4) ;
+//   carré crénelé n (témoin non fractal : même aire, même périmètre et même
+//     taille de détail que le flocon de profondeur n, n = 1 à 4) ;
+//   île de Minkowski n (autre fractale, murs alignés sur la grille, n = 1 à 3).
+enum { GEOM_CARRE = 0, GEOM_KOCH = 1, GEOM_CRENEAU = 2, GEOM_MINKOWSKI = 3 };
+
+// Profondeur de Koch par défaut (« fractal ») et profondeurs maximales
 #define KOCH_DEPTH_REF 2
 #define KOCH_DEPTH_MAX 4
-#define POLY_MAX (3 * 256)      // 3 · 4^KOCH_DEPTH_MAX sommets
+#define CRENEAU_MAX 4
+#define MINKOWSKI_MAX 3
+#define POLY_MAX 4096           // ≥ 4 · 8^MINKOWSKI_MAX sommets
 
 typedef struct { int x, y; } Point;
 typedef struct { double x, y; } Vec2;
@@ -104,8 +114,10 @@ typedef struct {
     long iteration;
     double sim_time;        // s
 
-    int mode;               // 0 : carré, 1 : flocon de Koch
-    int depth;              // profondeur de Koch (mode 1)
+    int mode;               // GEOM_CARRE, GEOM_KOCH, GEOM_CRENEAU, GEOM_MINKOWSKI
+    int depth;              // profondeur (sauf carré)
+    double wall;            // épaisseur du mur (m)
+    double room_area;       // aire intérieure imposée (m²)
 
     FILE *csv;              // enregistrement en cours (fenêtre)
 
@@ -120,6 +132,11 @@ typedef struct {
     int n_int, n_wall;      // pixels d'air et de mur
     int n_faces_int_wall;   // faces air/mur
     int n_faces_wall_ext;   // faces mur/extérieur
+    // Longueurs vraies des surfaces (m), mesurées sur la grille : somme des
+    // faces divisées par le facteur d'escalier. len_int ≈ périmètre du
+    // polygone ; len_ext : surface extérieure du mur, que le mur raccourcit
+    // en bouchant les creux.
+    double len_int, len_ext;
 } Sim;
 
 // Géométrie
@@ -138,6 +155,7 @@ int sim_alloc(Sim *s);
 void sim_free(Sim *s);
 void sim_reset(Sim *s);
 void geom_name(const Sim *s, char *buf, size_t n);
+int parse_geometry(const char *g, int *mode, int *depth);
 void csv_header(FILE *f, const Sim *s);
 void csv_row(FILE *f, const Sim *s);
 

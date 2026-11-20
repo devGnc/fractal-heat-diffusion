@@ -91,7 +91,7 @@ static int run_case(const Cas *c) {
     geometry_from_polygon(&s);  // s'arrête si l'air touche l'extérieur
 
     // Solution exacte, avec le rayon de source effectivement maillé
-    Exact e = { s.q_int, sqrt(s.n_src * DX * DX / M_PI), R_ROOM, R_ROOM + WALL_THICKNESS,
+    Exact e = { s.q_int, sqrt(s.n_src * DX * DX / M_PI), R_ROOM, R_ROOM + s.wall,
                 LAMBDA_AIR, 0.0 };
     const double r_wall = c->r_si / (2.0 * M_PI * e.Ra)
                         + log(e.Rb / e.Ra) / (2.0 * M_PI * LAMBDA_WALL)

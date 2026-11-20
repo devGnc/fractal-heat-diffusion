@@ -214,7 +214,7 @@ static void draw_room(App *a, int k, double x) {
 
     // Sous la pièce : son nom et la température moyenne de l'air
     char name[48], temp[32];
-    if (s->mode) snprintf(name, sizeof name, "Flocon de Koch %d", s->depth);
+    if (s->mode == GEOM_KOCH) snprintf(name, sizeof name, "Flocon de Koch %d", s->depth);
     else snprintf(name, sizeof name, "Carré");
     snprintf(temp, sizeof temp, "%.1f °C", s->stat_T_air);
     fr(temp);

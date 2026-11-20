@@ -7,7 +7,7 @@
  * La pièce est décrite par son contour intérieur, un polygone en mètres
  * (flocon de Koch ou carré). Sur la grille :
  *   - air : cases dont le centre est à l'intérieur du polygone ;
- *   - mur : cases extérieures à moins de WALL_THICKNESS du polygone (le mur
+ *   - mur : cases extérieures à moins de s->wall du polygone (le mur
  *     est l'épaisseur du contour, vers l'extérieur) ;
  *   - extérieur : le reste.
  * Le mur suit le contour vers l'extérieur : il comble les creux plus étroits
@@ -69,7 +69,7 @@ static double distance_polygon(const Vec2 *p, int n, double x, double y) {
 /*
  * Corrections de surface, au milieu (x, y) d'une face air/mur (outer = 0) ou
  * mur/extérieur (outer = 1). La surface intérieure est le contour ; la surface
- * extérieure, la courbe parallèle au contour à la distance WALL_THICKNESS.
+ * extérieure, la courbe parallèle au contour à la distance s->wall.
  *
  * f : facteur d'escalier |n_x| + |n_y| de la normale n à la surface. Sur la
  *   grille, une surface inclinée d'un angle θ est une suite de marches : pour
@@ -104,7 +104,7 @@ void surface_geometry(const Sim *s, double x, double y, int outer, double *f, do
     double len = hypot(nx, ny);
     *f = len > 0.0 ? (fabs(nx) + fabs(ny)) / len : 1.0;
     double d = sqrt(best);
-    if (outer) *delta = WALL_THICKNESS - d;
+    if (outer) *delta = s->wall - d;
     else *delta = inside_polygon(p, s->n_poly, x, y) ? -d : d;
 }
 
@@ -134,7 +134,7 @@ void geometry_from_polygon(Sim *s) {
     s->src_x = gx / (3.0 * a2);
     s->src_y = gy / (3.0 * a2);
 
-    const double e = WALL_THICKNESS;
+    const double e = s->wall;
     if (xmin - e < DX || ymin - e < DX || xmax + e > (G - 1) * DX || ymax + e > (G - 1) * DX) {
         fprintf(stderr, "Erreur : la pièce et ses murs dépassent de la grille\n");
         exit(1);
@@ -171,21 +171,93 @@ void geometry_from_polygon(Sim *s) {
     compute_conductances(s);
 }
 
+/*
+ * Carré crénelé n : témoin non fractal du flocon de profondeur n. Même aire,
+ * même périmètre P_n, et des créneaux de la taille des plus petits détails du
+ * flocon : sur chaque côté de longueur a, m = 2k + 1 intervalles de largeur
+ * w = a/m (créneau, creux, créneau...), avec k = 3^(n−1) créneaux de
+ * profondeur d tournés vers l'extérieur, et un creux à chaque extrémité. Aire
+ * et périmètre :
+ *   A = a² + 4·k·w·d,   P = 4a + 8·k·d
+ * En éliminant d = (P − 4a)/(8k) : a²·(1 − 2/m) + a·P/(2m) − A = 0.
+ */
+static void creneau_polygon(Sim *s, double c) {
+    const int n = s->depth;
+    const double A = s->room_area;
+    // Périmètre du flocon de même aire et de profondeur n
+    double r = sqrt(A / (koch_area_factor(n) * 3.0 * sqrt(3.0) / 4.0));
+    double P = 3.0 * r * sqrt(3.0) * pow(4.0 / 3.0, n);
+    int k = 1;
+    for (int i = 1; i < n; i++) k *= 3;
+    int m = 2 * k + 1;
+    double qa = 1.0 - 2.0 / m, qb = P / (2.0 * m);
+    double a = (-qb + sqrt(qb * qb + 4.0 * qa * A)) / (2.0 * qa);
+    double w = a / m, d = (P - 4.0 * a) / (8.0 * k);
+    if (d <= 0.0) {
+        fprintf(stderr, "Erreur : carré crénelé %d impossible\n", n);
+        exit(1);
+    }
+    // Côtés parcourus dans le sens trigonométrique ; normale extérieure
+    // (u_y, −u_x) pour la direction u.
+    double h = a / 2.0;
+    Vec2 corner[4] = { { c - h, c - h }, { c + h, c - h }, { c + h, c + h }, { c - h, c + h } };
+    for (int side = 0; side < 4; side++) {
+        Vec2 p = corner[side], q = corner[(side + 1) % 4];
+        double ux = (q.x - p.x) / a, uy = (q.y - p.y) / a, nx = uy, ny = -ux;
+        s->poly[s->n_poly++] = p;
+        for (int t = 0; t < k; t++) {
+            double x0 = (2 * t + 1) * w, x1 = x0 + w;
+            s->poly[s->n_poly++] = (Vec2){ p.x + x0 * ux, p.y + x0 * uy };
+            s->poly[s->n_poly++] = (Vec2){ p.x + x0 * ux + d * nx, p.y + x0 * uy + d * ny };
+            s->poly[s->n_poly++] = (Vec2){ p.x + x1 * ux + d * nx, p.y + x1 * uy + d * ny };
+            s->poly[s->n_poly++] = (Vec2){ p.x + x1 * ux, p.y + x1 * uy };
+        }
+    }
+}
+
+/*
+ * Île de Minkowski : chaque segment [A, B] est remplacé par 8 segments de
+ * longueur |AB|/4, avec u = (B − A)/4 et v = u tourné de −90° :
+ *   u, v, u, −v, −v, u, v, u
+ * Une bosse vers l'extérieur, une vers l'intérieur : l'aire du carré de départ
+ * est conservée, le périmètre double à chaque profondeur et les détails
+ * mesurent a/4^n. Tous les murs restent alignés sur la grille.
+ * Ajoute les sommets du côté [a, b] sauf b.
+ */
+static void minkowski_side(Vec2 a, Vec2 b, int depth, Vec2 *out, int *n) {
+    if (depth == 0) {
+        out[(*n)++] = a;
+        return;
+    }
+    double ux = (b.x - a.x) / 4.0, uy = (b.y - a.y) / 4.0, vx = uy, vy = -ux;
+    const int steps[8][2] = { { 1, 0 }, { 0, 1 }, { 1, 0 }, { 0, -1 },
+                              { 0, -1 }, { 1, 0 }, { 0, 1 }, { 1, 0 } };
+    Vec2 p = a;
+    for (int k = 0; k < 8; k++) {
+        Vec2 q = { p.x + steps[k][0] * ux + steps[k][1] * vx,
+                   p.y + steps[k][0] * uy + steps[k][1] * vy };
+        if (k == 7) q = b;  // évite l'accumulation d'arrondis
+        minkowski_side(p, q, depth - 1, out, n);
+        p = q;
+    }
+}
+
 void init_geometry(Sim *s) {
     const double c = GRID_SIZE * DX / 2.0;  // centre du domaine
+    const double A = s->room_area;
     s->n_poly = 0;
 
-    if (s->mode == 0) {
-        double h = sqrt(ROOM_AREA) / 2.0;
-        s->poly[0] = (Vec2){ c - h, c - h };
-        s->poly[1] = (Vec2){ c + h, c - h };
-        s->poly[2] = (Vec2){ c + h, c + h };
-        s->poly[3] = (Vec2){ c - h, c + h };
-        s->n_poly = 4;
+    if (s->mode == GEOM_CARRE || s->mode == GEOM_MINKOWSKI) {
+        double h = sqrt(A) / 2.0;
+        Vec2 q[4] = { { c - h, c - h }, { c + h, c - h }, { c + h, c + h }, { c - h, c + h } };
+        int depth = s->mode == GEOM_MINKOWSKI ? s->depth : 0;
+        for (int k = 0; k < 4; k++) minkowski_side(q[k], q[(k + 1) % 4], depth, s->poly, &s->n_poly);
+    } else if (s->mode == GEOM_CRENEAU) {
+        creneau_polygon(s, c);
     } else {
-        // Même aire ROOM_AREA à toutes les profondeurs : on règle le rayon r
-        // du cercle circonscrit au triangle de départ.
-        double r = sqrt(ROOM_AREA / (koch_area_factor(s->depth) * 3.0 * sqrt(3.0) / 4.0));
+        // Même aire A à toutes les profondeurs : on règle le rayon r du
+        // cercle circonscrit au triangle de départ.
+        double r = sqrt(A / (koch_area_factor(s->depth) * 3.0 * sqrt(3.0) / 4.0));
         double side = r * sqrt(3.0);
         // Triangle centré sur son centre de gravité
         Vec2 p1 = { c - side / 2.0, c + r / 2.0 };
@@ -212,9 +284,8 @@ void init_geometry(Sim *s) {
     geometry_from_polygon(s);
 
     char name[16];
-    if (s->mode) snprintf(name, sizeof name, "KOCH %d", s->depth);
-    else snprintf(name, sizeof name, "CARRÉ");
+    geom_name(s, name, sizeof name);
     printf("[%s] aire %.2f m² (grille : %.2f m²), périmètre intérieur %.2f m, "
-           "%d px de mur\n",
-           name, s->area, s->n_int * DX * DX, s->perimeter, s->n_wall);
+           "surface extérieure %.2f m, mur %.3g m, %d px de mur\n",
+           name, s->area, s->n_int * DX * DX, s->perimeter, s->len_ext, s->wall, s->n_wall);
 }

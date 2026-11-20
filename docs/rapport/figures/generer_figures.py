@@ -1,9 +1,9 @@
 """Figures du rapport (à lancer depuis la racine du dépôt) :
     python3 docs/rapport/figures/generer_figures.py
-Produit koch_profondeurs.png, convergence_test.png, puis les graphiques des
-scripts d'analyse (temps.png, profondeur.png) à partir de results/v4.
+Produit koch_profondeurs.png, temoins_formes.png, convergence_test.png, puis les
+graphiques des scripts d'analyse (temps.png, profondeur.png, loi_*.png,
+temoins.png) à partir de results/v4.
 """
-import math
 import os
 import runpy
 import sys
@@ -14,53 +14,47 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker
 
 OUT = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.dirname(os.path.dirname(OUT))
+sys.path.insert(0, os.path.join(REPO, "scripts"))
+import formes  # noqa: E402  (mêmes constructions que src/geometry.c)
+
 AREA = 36.0  # m², comme ROOM_AREA
 
 
-def koch_side(a, b, depth, out):
-    """Même construction que koch_side() dans src/geometry.c."""
-    if depth == 0:
-        out.append(a)
-        return
-    dx, dy = (b[0] - a[0]) / 3, (b[1] - a[1]) / 3
-    p3 = (a[0] + dx, a[1] + dy)
-    p4 = (a[0] + 2 * dx, a[1] + 2 * dy)
-    ang = -math.pi / 3
-    tip = (p3[0] + dx * math.cos(ang) - dy * math.sin(ang),
-           p3[1] + dx * math.sin(ang) + dy * math.cos(ang))
-    for u, v in ((a, p3), (p3, tip), (tip, p4), (p4, b)):
-        koch_side(u, v, depth - 1, out)
-
-
-def snowflake(depth):
-    f = 8 / 5 - 3 / 5 * (4 / 9) ** depth
-    r = math.sqrt(AREA / (f * 3 * math.sqrt(3) / 4))
-    s = r * math.sqrt(3)
-    p1, p2, p3 = (-s / 2, r / 2), (s / 2, r / 2), (0, -r)
-    pts = []
-    for u, v in ((p1, p3), (p3, p2), (p2, p1)):
-        koch_side(u, v, depth, pts)
-    return pts
+def draw(ax, name, pts, lim=5.6):
+    xs = [p[0] for p in pts] + [pts[0][0]]
+    ys = [-p[1] for p in pts] + [-pts[0][1]]
+    per = formes.perimetre(pts)
+    ax.fill(xs, ys, color="#f2c48d", edgecolor="#8a4b12", linewidth=0.6)
+    ax.set_title(f"{name}\npérimètre {per:.1f} m".replace(".", ","), fontsize=11)
+    ax.set_aspect("equal")
+    ax.set_xlim(-lim, lim)
+    ax.set_ylim(-lim, lim)
+    ax.axis("off")
 
 
 # 1. Carré et flocons de profondeur 0 à 4, même aire
 fig, axes = plt.subplots(1, 6, figsize=(15, 3.2))
-h = math.sqrt(AREA) / 2
-shapes = [("Carré", [(-h, -h), (h, -h), (h, h), (-h, h)])] + \
-         [(f"Koch {n}", snowflake(n)) for n in range(5)]
+shapes = [("Carré", formes.carre(AREA))] + \
+         [(f"Koch {n}", formes.koch(n, AREA)) for n in range(5)]
 for ax, (name, pts) in zip(axes, shapes):
-    xs = [p[0] for p in pts] + [pts[0][0]]
-    ys = [-p[1] for p in pts] + [-pts[0][1]]
-    per = sum(math.dist(pts[i], pts[(i + 1) % len(pts)]) for i in range(len(pts)))
-    ax.fill(xs, ys, color="#f2c48d", edgecolor="#8a4b12", linewidth=0.8)
-    ax.set_title(f"{name}\npérimètre {per:.1f} m".replace(".", ","), fontsize=11)
-    ax.set_aspect("equal")
-    ax.set_xlim(-5.6, 5.6)
-    ax.set_ylim(-5.6, 5.6)
-    ax.axis("off")
+    draw(ax, name, pts)
 fig.suptitle("Même aire intérieure : 36 m²", fontsize=12)
 plt.tight_layout(rect=(0, 0, 1, 0.88))
 plt.savefig(os.path.join(OUT, "koch_profondeurs.png"), dpi=170)
+plt.close()
+
+# 1 bis. Formes témoins : carrés crénelés (même aire, même périmètre et même
+# taille de détail que le flocon de même numéro) et îles de Minkowski
+fig, axes = plt.subplots(2, 4, figsize=(12, 6.6))
+for n in range(1, 5):
+    draw(axes[0][n - 1], f"Carré crénelé {n}", formes.creneau(n, AREA))
+for n in range(1, 4):
+    draw(axes[1][n - 1], f"Minkowski {n}", formes.minkowski(n, AREA))
+axes[1][3].axis("off")
+fig.suptitle("Formes témoins, toutes d'aire 36 m²", fontsize=12)
+plt.tight_layout(rect=(0, 0, 1, 0.94))
+plt.savefig(os.path.join(OUT, "temoins_formes.png"), dpi=170)
 plt.close()
 
 # 2. Convergence du test de la pièce circulaire (valeurs de make test)
@@ -93,4 +87,9 @@ for script, arg, name in (("analyse.py", "results/v4/temps", "temps.png"),
     sys.argv = ["scripts/" + script, arg]
     runpy.run_path("scripts/" + script, run_name="__main__")
     plt.close("all")
+# 4. Loi de la profondeur optimale et témoins (loi_epaisseur.png,
+# loi_seuils.png, temoins.png)
+sys.argv = ["scripts/loi.py", OUT]
+runpy.run_path("scripts/loi.py", run_name="__main__")
+plt.close("all")
 print("Figures écrites dans", OUT)

@@ -12,7 +12,8 @@
 /* ------------------------------------------------------------------------ */
 
 // n_iter = 0 : jusqu'au régime établi (au plus MAX_DAYS jours simulés)
-static int run_headless(int mode, int depth, long n_iter, const char *out) {
+static int run_headless(int mode, int depth, double wall, double area, long n_iter,
+                        const char *out) {
     Sim s = {0};
     if (!sim_alloc(&s)) {
         fprintf(stderr, "Allocation mémoire impossible\n");
@@ -20,6 +21,8 @@ static int run_headless(int mode, int depth, long n_iter, const char *out) {
     }
     s.mode = mode;
     s.depth = depth;
+    s.wall = wall;
+    s.room_area = area;
     sim_reset(&s);
 
     FILE *f = fopen(out, "w");
@@ -68,7 +71,7 @@ static int run_headless(int mode, int depth, long n_iter, const char *out) {
 
 // Régime établi résolu directement (gradient conjugué), sans transitoire.
 // Écrit un CSV au même format, avec une seule ligne (le régime établi).
-static int run_steady(int mode, int depth, const char *out) {
+static int run_steady(int mode, int depth, double wall, double area, const char *out) {
     Sim s = {0};
     if (!sim_alloc(&s)) {
         fprintf(stderr, "Allocation mémoire impossible\n");
@@ -76,6 +79,8 @@ static int run_steady(int mode, int depth, const char *out) {
     }
     s.mode = mode;
     s.depth = depth;
+    s.wall = wall;
+    s.room_area = area;
     sim_reset(&s);
 
     char name[16];
@@ -125,19 +130,32 @@ static void usage(const char *prog) {
             "  %s --capture <image.bmp> [profondeur] [vue] [heures]\n"
             "      image de la fenêtre sans l'ouvrir (vue : temp ou flux ;\n"
             "      défaut : profondeur 3, temp, 168 h)\n"
-            "  geometrie : carre, koch0 ... koch%d (fractal = koch%d)\n",
-            prog, prog, prog, prog, KOCH_DEPTH_MAX, KOCH_DEPTH_REF);
+            "  geometrie : carre, koch0 ... koch%d (fractal = koch%d),\n"
+            "              creneau1 ... creneau%d (témoin non fractal du flocon de même profondeur),\n"
+            "              minkowski1 ... minkowski%d\n"
+            "  options (--headless, --regime) :\n"
+            "      --epaisseur <m>  épaisseur du mur (défaut %g m)\n"
+            "      --aire <m²>      aire intérieure de la pièce (défaut %g m²)\n",
+            prog, prog, prog, prog, KOCH_DEPTH_MAX, KOCH_DEPTH_REF, CRENEAU_MAX,
+            MINKOWSKI_MAX, WALL_THICKNESS, ROOM_AREA);
 }
 
-// Lit une géométrie (carre, koch<n>, fractal) ; renvoie 0 si inconnue
-static int parse_geometry(const char *g, int *mode, int *depth) {
-    *mode = 1;
-    *depth = KOCH_DEPTH_REF;
-    if (strcmp(g, "carre") == 0) *mode = 0;
-    else if (strcmp(g, "fractal") == 0) return 1;
-    else if (strncmp(g, "koch", 4) == 0 && g[4] >= '0' && g[4] <= '0' + KOCH_DEPTH_MAX
-             && g[5] == '\0') *depth = g[4] - '0';
-    else return 0;
+// Retire de argv les options --epaisseur et --aire. Renvoie 0 si une valeur
+// est invalide.
+static int parse_options(int *argc, char **argv, double *wall, double *area) {
+    int out = 1;
+    for (int i = 1; i < *argc; i++) {
+        double *dst = strcmp(argv[i], "--epaisseur") == 0 ? wall
+                    : strcmp(argv[i], "--aire") == 0 ? area : NULL;
+        if (!dst) { argv[out++] = argv[i]; continue; }
+        char *end;
+        if (i + 1 >= *argc || (*dst = strtod(argv[i + 1], &end)) <= 0.0 || *end != '\0') {
+            fprintf(stderr, "Valeur invalide pour %s\n", argv[i]);
+            return 0;
+        }
+        i++;
+    }
+    *argc = out;
     return 1;
 }
 
@@ -155,19 +173,22 @@ int main(int argc, char **argv) {
         return capture_gui(argv[2], depth, view, hours);
     }
 
+    double wall = WALL_THICKNESS, area = ROOM_AREA;
+    if (!parse_options(&argc, argv, &wall, &area)) return 1;
+
     int mode, depth;
     if (argc < 3 || !parse_geometry(argv[2], &mode, &depth)) {
         usage(argv[0]);
         return 1;
     }
     char name[16];
-    if (mode == 0) snprintf(name, sizeof name, "carre");
-    else snprintf(name, sizeof name, "koch%d", depth);
+    Sim tmp = { .mode = mode, .depth = depth };
+    geom_name(&tmp, name, sizeof name);
 
     if (strcmp(argv[1], "--regime") == 0 && argc <= 4) {
         char out[64];
         snprintf(out, sizeof out, "regime_%s.csv", name);
-        return run_steady(mode, depth, argc == 4 ? argv[3] : out);
+        return run_steady(mode, depth, wall, area, argc == 4 ? argv[3] : out);
     }
 
     if (strcmp(argv[1], "--headless") != 0 || argc > 5) {
@@ -185,5 +206,5 @@ int main(int argc, char **argv) {
     }
     char out[64];
     snprintf(out, sizeof out, "res_%s.csv", name);
-    return run_headless(mode, depth, n_iter, argc == 5 ? argv[4] : out);
+    return run_headless(mode, depth, wall, area, n_iter, argc == 5 ? argv[4] : out);
 }
