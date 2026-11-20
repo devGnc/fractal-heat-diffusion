@@ -28,10 +28,17 @@ chaleur, volumes finis, complexité.
 ```bash
 brew install sdl2 pkg-config      # macOS
 make                              # compile ./thermalfractalsim
-make run                          # fenêtre interactive (grille de 5 cm)
+make run                          # fenêtre interactive (grille de 3,5 cm)
 make data                         # carré + Koch 0 à 4 sans fenêtre, grille de 1,25 cm (≈ 2 min)
 make plot                         # courbes temporelles + étude en profondeur
 make test                         # validation : pièce circulaire comparée à la solution exacte (≈ 10 s)
+```
+
+Images de la fenêtre sans l'ouvrir (pour le README, un rapport, une présentation) :
+
+```bash
+./thermalfractalsim --capture image.bmp 3 temp 168   # profondeur 3, vue température, après 168 h
+./thermalfractalsim --capture image.bmp 4 flux 240   # profondeur 4, vue flux, après 10 jours
 ```
 
 Mode sans fenêtre : la simulation tourne jusqu'au régime établi (une ligne de
@@ -47,18 +54,41 @@ Géométries : `carre`, `koch0` (triangle) à `koch4`, et `fractal` (= `koch2`).
 Le résumé final affiche la température de l'air, le **bilan d'énergie**
 (en régime établi, `P_ext = Q_int`) et la conductance G.
 
+### Fenêtre interactive
+
+Le carré (référence) et un flocon de Koch, de même aire et avec les mêmes apports de
+chaleur, sont simulés côte à côte. Sous chaque pièce : la température de l'air, la
+conductance G, la longueur de mur, la chaleur évacuée et le flux moyen par mètre de
+mur ; pour le flocon, l'écart de température et le gain par rapport au carré. À
+droite : la légende des couleurs, la courbe de la température de l'air des deux
+pièces et les commandes. Pendant la montée en température, G est marquée
+« provisoire » : P / (T_air − T_ext) n'est la conductance de la pièce qu'en régime
+établi.
+
+![Vue température](docs/captures/temperature.png)
+
+Vue **température** : l'air brassé a une seule température ; le dégradé dans les
+murs montre la chaleur qui traverse le béton. Après 7 jours, le flocon de
+profondeur 3 reste à 25,5 °C, contre 29,4 °C pour le carré.
+
+![Vue flux de chaleur](docs/captures/flux.png)
+
+Vue **flux de chaleur** (touche F) : intensité du flux dans les murs, en W/m².
+Chaque mètre de mur du flocon évacue moins que celui du carré (15 W/m² contre 33 en
+moyenne), surtout au fond des creux, mais le flocon a deux fois plus de mur.
+
 | Touche | Action |
 |---|---|
-| Espace | Basculer carré ↔ fractale |
-| 0 à 4 | Flocon de Koch de cette profondeur |
-| S | Démarrer / arrêter l'enregistrement CSV (`res_<geometrie>.csv`) ; changer de géométrie ou R l'arrête aussi |
-| R | Réinitialiser |
-| Q | Quitter |
+| 0 à 4 | Profondeur du flocon (les deux pièces repartent de zéro) |
+| F | Vue température ↔ flux de chaleur |
+| Espace | Pause |
+| + / − | Vitesse (de 2,5 min à 2 h 40 simulées par image) |
+| R | Recommencer |
+| S | Démarrer / arrêter l'enregistrement CSV des deux pièces (`res_carre.csv`, `res_koch<n>.csv`) |
+| Q, Échap | Quitter |
 
-Dans la fenêtre, les couleurs vont de 20 °C (bleu) à 30 °C (jaune) ; l'air est
-éclairci pour le distinguer des murs. Le titre affiche le temps simulé,
-T_air, la puissance évacuée et G. Une image correspond à 10 minutes simulées :
-le régime établi est atteint en 5 à 11 jours simulés.
+Le texte est affiché avec une petite police bitmap intégrée (`src/font.c`) : aucune
+bibliothèque en plus de SDL2 n'est nécessaire.
 
 Format du CSV : une ligne de commentaire décrivant la géométrie
 (`# geometrie=koch2 profondeur=2 aire_m2=... perimetre_m=... t_ext=...`, lue avec
@@ -78,10 +108,13 @@ déplacer dans `results/<version>/` pour les garder.
 ```
 src/
   thermal_diffusion.h   paramètres physiques et structure Sim
-  geometry.c            contours (Koch récursif, carré) de même aire, murs épais, correction d'escalier
+  geometry.c            contours (Koch récursif, carré) de même aire, murs épais, corrections de surface
   physics.c             volumes finis, conductances des faces, stabilité, statistiques, bilan
-  render.c              carte de couleurs SDL
-  main.c                mode headless, boucle SDL, clavier, enregistrement CSV
+  io.c                  allocation, réinitialisation, enregistrement CSV
+  render.c              cartes de couleurs (température, flux), flux de chaleur dans les murs
+  ui.c                  fenêtre interactive (deux pièces côte à côte, légende, courbes), --capture
+  font.c                police bitmap intégrée
+  main.c                ligne de commande, mode headless
 tests/test_anneau.c     validation sur une pièce circulaire (solution exacte), plusieurs résolutions
 scripts/analyse.py      évolution temporelle de toutes les simulations d'un dossier
 scripts/profondeur.py   régime établi en fonction de la profondeur de Koch
@@ -89,7 +122,7 @@ results/v0/             premiers résultats (ancien dépôt, régime non établi
 results/v1/             headless, stats sur l'air, schéma encore non conservatif
 results/v2/             schéma conservatif en unités de grille (float)
 results/v3/             modèle physique, carré + Koch 0 à 4, grille de 1,25 cm
-docs/                   export GeoGebra
+docs/                   export GeoGebra ; captures/ : images de la fenêtre
 ```
 
 ## Modèle (v3)
@@ -105,7 +138,7 @@ Coupe horizontale d'une pièce, en unités physiques ; les grandeurs sont donné
 | Surfaces (ISO 6946) | R_si = 0,13 m²·K/W (intérieur), R_se = 0,04 m²·K/W (extérieur) |
 | Apports internes | Q_int = 800 W/m, soit 2 kW pour 2,5 m de haut (≈ 55 W/m²) |
 | Extérieur | thermostat à 20 °C |
-| Grille | 300 × 300 cases de 5 cm (fenêtre) ; 1 200 × 1 200 cases de 1,25 cm (`make data`) |
+| Grille | 300 × 300 cases de 3,5 cm (fenêtre) ; 1 200 × 1 200 cases de 1,25 cm (`make data`) |
 | Pas de temps | 30 s, schéma explicite |
 
 - **Géométrie.** Le contour intérieur est un polygone exact (flocon de Koch ou
@@ -120,11 +153,15 @@ Coupe horizontale d'une pièce, en unités physiques ; les grandeurs sont donné
   bâtiment. Résoudre l'air sur la grille avec une conductivité « efficace » élevée
   imposerait un pas de temps d'environ 0,01 s, alors qu'il faut une semaine
   simulée pour que les murs atteignent le régime établi.
-- **Correction d'escalier.** Sur la grille, un mur incliné d'un angle θ est une
-  suite de marches qui compte L·(|cos θ| + |sin θ|) de faces pour une longueur L.
-  Chaque résistance superficielle est multipliée par ce facteur, calculé à partir
-  de la vraie normale au contour : la surface échange alors sur sa vraie longueur
-  (voir la validation).
+- **Corrections de surface.** Deux défauts de la grille sont corrigés, face par
+  face, à partir du vrai contour (voir la validation) :
+  - *escalier* : un mur incliné d'un angle θ est une suite de marches qui compte
+    L·(|cos θ| + |sin θ|) de faces pour une longueur L. Les résistances de surface
+    sont multipliées par ce facteur, calculé avec la vraie normale au contour ;
+  - *épaisseur* : les cases sont entières, si bien qu'un mur de 20 cm sur des cases
+    de 3,5 cm n'en faisait que 17,5 (G du carré trop grande de 5 %). Chaque face de
+    surface reçoit la résistance de l'épaisseur manquante (ou en trop) entre la
+    face et la vraie surface.
 - **Stabilité.** Δt · Σ conductances ≤ capacité, pour chaque case de mur et pour le
   nœud d'air ; vérifié au démarrage (au plus 0,58 avec les valeurs ci-dessus).
 
@@ -138,8 +175,8 @@ Coupe horizontale d'une pièce, en unités physiques ; les grandeurs sont donné
 | Koch 0 (triangle) | 27,4 m | 28,25 °C | 97,0 | 1,14 | 3,55 |
 | Koch 1 | 31,6 m | 27,27 °C | 110,0 | 1,29 | 3,48 |
 | Koch 2 | 40,0 m | 26,04 °C | 132,5 | 1,55 | 3,32 |
-| Koch 3 | 52,1 m | 25,32 °C | **150,3** | **1,76** | 2,88 |
-| Koch 4 | 68,9 m | 26,22 °C | 128,6 | 1,51 | 1,87 |
+| Koch 3 | 52,1 m | 25,33 °C | **150,2** | **1,76** | 2,88 |
+| Koch 4 | 68,9 m | 26,23 °C | 128,4 | 1,50 | 1,87 |
 
 Repère : un mur droit de ce type transmet U = 1 / (R_si + e/λ + R_se) =
 3,52 W/(m²·K), soit 3,52 W/(m·K) par mètre de mur et de hauteur.
@@ -159,22 +196,21 @@ Repère : un mur droit de ce type transmet U = 1 / (R_si + e/λ + R_se) =
 
 **Convergence en maillage** (G en W/(m·K)) :
 
-| | Δx = 5 cm | 2,5 cm | 1,25 cm |
-|---|---|---|---|
-| Carré | 85,35 | 85,36 | 85,37 |
-| Koch 0 | 96,72 | 96,77 | 97,03 |
-| Koch 1 | 109,63 | 109,92 | 109,98 |
-| Koch 2 | 131,83 | 132,29 | 132,53 |
-| Koch 3 | 144,59 | 146,41 | 150,28 |
-| Koch 4 | 118,72 | 123,90 | 128,55 |
+| | Δx = 5 cm | 3,5 cm (fenêtre) | 2,5 cm | 1,25 cm (`make data`) |
+|---|---|---|---|---|
+| Carré | 85,4 | 85,6 | 85,4 | 85,4 |
+| Koch 0 | 96,5 | 96,6 | 96,7 | 97,0 |
+| Koch 2 | 131,3 | 131,1 | 132,3 | 132,5 |
+| Koch 3 | 144,1 | 146,6 | 146,4 | 150,2 |
+| Koch 4 | 118,4 | 119,5 | 123,8 | 128,4 |
 
-Jusqu'à la profondeur 2, les résultats sont stables à mieux que 0,5 %. Aux
-profondeurs 3 et 4, ils ne sont pas encore convergés : les pointes à 60° et les creux
-étroits sont mal résolus sur une grille grossière (à 5 cm, la surface intérieure
-de Koch 3 compte 4,7 % de faces de moins que la valeur théorique ; à 1,25 cm,
-0,5 %). Leurs valeurs à 1,25 cm sont probablement un peu sous-estimées, mais
-l'ordre des résultats (maximum à la profondeur 3) est le même à toutes les
-résolutions.
+Jusqu'à la profondeur 2, les résultats sont stables à 1 % près. Aux profondeurs 3 et
+4, ils ne sont pas encore convergés : les pointes à 60° et les creux étroits sont mal
+résolus sur une grille grossière (à 5 cm, la surface intérieure de Koch 3 compte
+4,7 % de faces de moins que la valeur théorique ; à 1,25 cm, 0,5 %). Leurs valeurs à
+1,25 cm sont probablement un peu sous-estimées, mais l'ordre des résultats (maximum
+à la profondeur 3) est le même à toutes les résolutions. La fenêtre (3,5 cm)
+sous-estime G de Koch 3 d'environ 2 %.
 
 ## Validation : test de la pièce circulaire
 
@@ -191,18 +227,25 @@ valeur exacte (1 = surfaces correctement représentées).
 
 | Cas | Erreur sur P à 5 cm | 2,5 cm | 1,25 cm | R_surf (1,25 cm) |
 |---|---|---|---|---|
-| Conduction seule (R_si = R_se = 0) | +3,5 % | +2,1 % | +0,7 % | — |
-| Surfaces sans correction d'escalier | +14,0 % | +14,2 % | +14,2 % | 0,795 |
-| Surfaces avec correction (simulation) | −0,9 % | −0,5 % | −0,4 % | 1,007 |
+| Conduction seule, sans corrections | +3,5 % | +2,1 % | +0,7 % | — |
+| Conduction seule, avec corrections | −0,6 % | −0,3 % | −0,2 % | — |
+| Surfaces de la norme, sans corrections | +14,0 % | +14,2 % | +14,2 % | 0,795 |
+| Surfaces de la norme, avec corrections (simulation) | −1,6 % | −0,9 % | −0,5 % | 1,008 |
 
 **Lecture.**
-- La conduction dans le mur converge quand la grille s'affine.
+- La conduction dans le mur converge quand la grille s'affine. La correction
+  d'épaisseur divise l'erreur par 4 à 6 et rend la convergence régulière (l'erreur
+  est divisée par 2 quand Δx est divisé par 2).
 - Sans correction, la résistance des surfaces est trop faible de 20 % **à toutes les
   résolutions**. C'est exactement la valeur théorique : sur un cercle, la moyenne
   de 1/(|cos θ| + |sin θ|) vaut 0,794. Pour un flocon (murs à 0°, 60° et 120°), le
   biais aurait favorisé la fractale face au carré (dont les murs sont alignés sur la
   grille et ne subissent pas de biais) : G de Koch 0 passait de 97 à 109 W/(m·K).
-- Avec la correction, l'erreur reste sous 1 % à toutes les résolutions.
+- Avec les corrections, l'erreur est divisée par 2 à chaque raffinement et reste
+  sous 1 % dès 2,5 cm.
+- Le cercle moyenne les positions des murs par rapport à la grille : il ne voyait
+  pas le défaut d'épaisseur, visible seulement sur des murs droits (carré). C'est la
+  comparaison du carré à plusieurs résolutions qui l'a révélé.
 
 ## Historique des corrections
 
@@ -216,6 +259,8 @@ valeur exacte (1 = surfaces correctement représentées).
   l'air, l'inverse de la réalité) ; air brassé au lieu d'air immobile ; murs épais ;
   résistances superficielles avec correction d'escalier ; pertes de Newton
   retirées (sol et plafond considérés comme adiabatiques).
+- v3.1 : correction d'épaisseur des murs ; nouvelle fenêtre (deux pièces côte à
+  côte, vue flux, légende, courbes, police intégrée), option `--capture`.
 
 ## Limites actuelles et pistes
 

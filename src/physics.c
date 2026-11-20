@@ -12,10 +12,13 @@
  *   air/mur : surface + demi-case        G = Δx / (R_si + Δx/2λ)
  *   mur/ext : demi-case + surface        G = Δx / (Δx/2λ + R_se)
  *
- * Les résistances superficielles sont multipliées par le facteur d'escalier
- * |n_x| + |n_y| de la surface (voir staircase_factor dans geometry.c) : la
- * conductance totale d'une surface en marches est alors celle de sa vraie
- * longueur.
+ * Corrections de surface (voir surface_geometry dans geometry.c) : la face
+ * reçoit en plus la résistance delta/λ de l'épaisseur de mur que les cases
+ * entières ne représentent pas, et ses résistances de surface sont multipliées
+ * par le facteur d'escalier f = |n_x| + |n_y| :
+ *   G = Δx / ((R_s + delta/λ)·f + Δx/2λ)
+ * La conductance totale d'une surface en marches est alors celle de sa vraie
+ * longueur, à sa vraie position.
  *
  * Schéma explicite (Euler) :
  *   C_i (T_i' − T_i) / Δt = Σ_faces G_f (T_j − T_i)
@@ -40,9 +43,12 @@ static double face_conductance(const Sim *s, int i, int j) {
         double ym = ((i / G + j / G) / 2.0 + 0.5) * DX;
         int outer = zi == ZONE_EXT;
         int w = outer ? j : i;  // case de mur
-        double f = s->raw_surfaces ? 1.0 : staircase_factor(s, xm, ym, outer);
-        double r = outer ? s->r_se : s->r_si;
-        return DX / (r * f + DX / (2.0 * s->lambda[w]));
+        double f = 1.0, delta = 0.0, lam = s->lambda[w];
+        if (!s->raw_surfaces) surface_geometry(s, xm, ym, outer, &f, &delta);
+        double r = (outer ? s->r_se : s->r_si) + delta / lam;
+        // Garde-fou : la demi-case ne peut pas être annulée par un excès de mur
+        double denom = fmax(r * f + DX / (2.0 * lam), DX / (8.0 * lam));
+        return DX / denom;
     }
     return DX / (DX / (2.0 * s->lambda[i]) + DX / (2.0 * s->lambda[j]));
 }

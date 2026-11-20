@@ -29,9 +29,8 @@
 #define GRID_SIZE 300
 #endif
 #ifndef DX
-#define DX 0.05                 // m : côté d'un pixel (domaine de 15 m × 15 m)
+#define DX 0.035                // m : côté d'un pixel (domaine de 10,5 m × 10,5 m)
 #endif
-#define WIN_SIZE 900
 
 enum { ZONE_EXT = 0, ZONE_WALL = 1, ZONE_INT = 2 };
 
@@ -60,15 +59,13 @@ enum { ZONE_EXT = 0, ZONE_WALL = 1, ZONE_INT = 2 };
 #ifndef DT
 #define DT 30.0                 // s
 #endif
-#define ITER_PER_FRAME 20       // 10 min simulées par image
 
 // Statistiques (et ligne CSV) toutes les STATS_EVERY itérations
 #define STATS_EVERY 120         // 1 h simulée
-_Static_assert(STATS_EVERY % ITER_PER_FRAME == 0,
-               "STATS_EVERY doit être un multiple de ITER_PER_FRAME");
 
-// Échelle de couleurs de la fenêtre
-#define T_DISPLAY_MAX 30.0
+// Échelles de couleurs de la fenêtre
+#define T_DISPLAY_MAX 30.0      // °C (le bas de l'échelle est T_EXT)
+#define FLUX_DISPLAY_MAX 60.0   // W/m²
 
 // Profondeur de Koch par défaut (« fractal ») et profondeur maximale
 #define KOCH_DEPTH_REF 2
@@ -89,8 +86,7 @@ typedef struct {
     // l'extérieur (bilans de puissance)
     double *g_air, *g_ext;
     uint8_t *zones;
-    uint32_t *pixels;
-    SDL_Texture *tex;
+    uint32_t *pixels;       // image de la grille (fenêtre)
 
     // Contour intérieur de la pièce (m)
     Vec2 *poly;
@@ -102,7 +98,7 @@ typedef struct {
     int air_fixed;          // 1 : T_air imposée (test) ; 0 : chauffée par q_int
     double q_int;           // W/m
     double r_si, r_se;      // m²·K/W
-    int raw_surfaces;       // 1 : sans correction d'escalier (test uniquement)
+    int raw_surfaces;       // 1 : sans corrections de surface (test uniquement)
 
     long iteration;
     double sim_time;        // s
@@ -127,7 +123,7 @@ typedef struct {
 // Géométrie
 void init_geometry(Sim *s);
 void geometry_from_polygon(Sim *s);
-double staircase_factor(const Sim *s, double x, double y, int outer);
+void surface_geometry(const Sim *s, double x, double y, int outer, double *f, double *delta);
 
 // Physique
 void compute_conductances(Sim *s);
@@ -135,7 +131,23 @@ void step_physics(Sim *s);
 void check_stability(const Sim *s);
 void compute_stats(Sim *s);
 
-// Rendu
-void render(SDL_Renderer *ren, Sim *s);
+// Entrées-sorties (io.c)
+int sim_alloc(Sim *s);
+void sim_free(Sim *s);
+void sim_reset(Sim *s);
+void geom_name(const Sim *s, char *buf, size_t n);
+void csv_header(FILE *f, const Sim *s);
+void csv_row(FILE *f, const Sim *s);
+
+// Rendu (render.c)
+enum { VIEW_TEMP = 0, VIEW_FLUX = 1 };
+double wall_flux(const Sim *s, int i);
+SDL_Color temp_color(double T);
+SDL_Color flux_color(double q);
+void fill_pixels(Sim *s, int view);
+
+// Fenêtre interactive (ui.c)
+int run_gui(void);
+int capture_gui(const char *path, int depth, int view, double hours);
 
 #endif

@@ -67,19 +67,26 @@ static double distance_polygon(const Vec2 *p, int n, double x, double y) {
 }
 
 /*
- * Correction d'escalier. Sur la grille, une surface inclinée d'un angle θ est
- * une suite de marches : pour une longueur L de mur, elle compte
- * L·(|cos θ| + |sin θ|) de faces. Une résistance superficielle posée sur
- * chaque face surestime donc l'échange de ce facteur (jusqu'à √2 à 45°), et
- * ce biais ne diminue pas en raffinant la grille. On renvoie ici le facteur
- * |n_x| + |n_y| de la normale n à la surface au point (x, y) (milieu d'une
- * face) ; physics.c multiplie la résistance superficielle de la face par ce
- * facteur. Surface intérieure (outer = 0) : normale du segment le plus proche.
- * Surface extérieure (outer = 1) : c'est la courbe parallèle au contour à la
- * distance WALL_THICKNESS, de normale dirigée depuis le point le plus proche
- * du contour.
+ * Corrections de surface, au milieu (x, y) d'une face air/mur (outer = 0) ou
+ * mur/extérieur (outer = 1). La surface intérieure est le contour ; la surface
+ * extérieure, la courbe parallèle au contour à la distance WALL_THICKNESS.
+ *
+ * f : facteur d'escalier |n_x| + |n_y| de la normale n à la surface. Sur la
+ *   grille, une surface inclinée d'un angle θ est une suite de marches : pour
+ *   une longueur L de mur, elle compte L·(|cos θ| + |sin θ|) de faces. Une
+ *   résistance posée sur chaque face surestime donc l'échange de ce facteur
+ *   (jusqu'à √2 à 45°), et ce biais ne diminue pas en raffinant la grille.
+ *   physics.c multiplie les résistances de surface de la face par f.
+ *
+ * delta : épaisseur de mur manquante entre la face et la vraie surface (m),
+ *   négative si la grille met trop de mur. Les cases sont entières : sans
+ *   correction, un mur de 20 cm sur des cases de 3,5 cm n'en fait que 17,5.
+ *   physics.c ajoute la résistance delta/λ à la face.
+ *
+ * Normale : celle du segment le plus proche (surface intérieure), ou la
+ * direction depuis le point le plus proche du contour (surface extérieure).
  */
-double staircase_factor(const Sim *s, double x, double y, int outer) {
+void surface_geometry(const Sim *s, double x, double y, int outer, double *f, double *delta) {
     const Vec2 *p = s->poly;
     double best = INFINITY, nx = 0.0, ny = 0.0;
     for (int i = 0, j = s->n_poly - 1; i < s->n_poly; j = i++) {
@@ -95,7 +102,10 @@ double staircase_factor(const Sim *s, double x, double y, int outer) {
         }
     }
     double len = hypot(nx, ny);
-    return len > 0.0 ? (fabs(nx) + fabs(ny)) / len : 1.0;
+    *f = len > 0.0 ? (fabs(nx) + fabs(ny)) / len : 1.0;
+    double d = sqrt(best);
+    if (outer) *delta = WALL_THICKNESS - d;
+    else *delta = inside_polygon(p, s->n_poly, x, y) ? -d : d;
 }
 
 // Remplit zones, matériaux et températures initiales à partir de s->poly,
@@ -165,6 +175,19 @@ void init_geometry(Sim *s) {
         koch_side(p1, p3, s->depth, s->poly, &s->n_poly);
         koch_side(p3, p2, s->depth, s->poly, &s->n_poly);
         koch_side(p2, p1, s->depth, s->poly, &s->n_poly);
+    }
+
+    // Centrage du cadre englobant (le centre de gravité du triangle n'est pas
+    // au milieu de son cadre) : la pièce occupe mieux le domaine.
+    double xmin = INFINITY, xmax = -INFINITY, ymin = INFINITY, ymax = -INFINITY;
+    for (int k = 0; k < s->n_poly; k++) {
+        xmin = fmin(xmin, s->poly[k].x); xmax = fmax(xmax, s->poly[k].x);
+        ymin = fmin(ymin, s->poly[k].y); ymax = fmax(ymax, s->poly[k].y);
+    }
+    double sx = c - (xmin + xmax) / 2.0, sy = c - (ymin + ymax) / 2.0;
+    for (int k = 0; k < s->n_poly; k++) {
+        s->poly[k].x += sx;
+        s->poly[k].y += sy;
     }
 
     geometry_from_polygon(s);

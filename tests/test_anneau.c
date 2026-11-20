@@ -15,8 +15,9 @@
  *
  * Cas :
  *   - conduction   : R_si = R_se = 0, seule la conduction dans le mur compte ;
- *   - surf_brutes  : R_si et R_se de la norme, sans correction d'escalier ;
- *   - surfaces     : R_si et R_se avec correction d'escalier (simulation).
+ *   - cond_brute   : idem, sans corrections de surface ;
+ *   - surf_brutes  : R_si et R_se de la norme, sans corrections de surface ;
+ *   - surfaces     : R_si et R_se, avec corrections (comme la simulation).
  * R_surf est la résistance des deux surfaces déduite de la simulation (en
  * retranchant la conduction, exacte), rapportée à sa valeur théorique.
  */
@@ -40,6 +41,7 @@ typedef struct {
 } Cas;
 
 static const Cas CAS[] = {
+    { "cond_brute",  0.0,  0.0,  1 },
     { "conduction",  0.0,  0.0,  0 },
     { "surf_brutes", R_SI, R_SE, 1 },
     { "surfaces",    R_SI, R_SE, 0 },
