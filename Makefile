@@ -33,27 +33,32 @@ $(BUILDDIR)/%.o: $(SRCDIR)/%.c $(HDR) | $(BUILDDIR)
 run: $(TARGET)
 	./$(TARGET)
 
-# Simulations complètes sans fenêtre (régime établi), CSV à la racine :
-# carré iso-aire et flocons de Koch de profondeur 0 à 3 (même aire)
-GEOMETRIES = carre koch0 koch1 koch2 koch3
-data: $(TARGET)
-	@for g in $(GEOMETRIES); do ./$(TARGET) --headless $$g $(ITER) || exit 1; done
+# Simulations complètes sans fenêtre jusqu'au régime établi, CSV à la racine :
+# carré et flocons de Koch de profondeur 0 à 4 (même aire). Grille fine
+# (Δx = 1,25 cm) : à 5 cm, les détails de profondeur 3 et 4 sont mal résolus.
+FINE = $(BUILDDIR)/thermalfractalsim_fin
+$(FINE): $(SRC) $(HDR) | $(BUILDDIR)
+	$(CC) $(CFLAGS) -DGRID_SIZE=1200 "-DDX=0.0125" -o $@ $(SRC) $(LDFLAGS)
+
+GEOMETRIES = carre koch0 koch1 koch2 koch3 koch4
+data: $(FINE)
+	@for g in $(GEOMETRIES); do ./$(FINE) --headless $$g || exit 1; done
 
 plot:
 	python3 scripts/analyse.py
 	python3 scripts/profondeur.py
 
-# Test de validation : anneau circulaire comparé à la solution exacte, à
-# plusieurs résolutions s (source de rayon 8·s, mur au rayon 32·s).
+# Test de validation : pièce circulaire comparée à la solution exacte, à
+# plusieurs résolutions s (Δx = 5 cm / s ; Δt réduit en 1/s² pour la stabilité).
 SCALES = 1 2 4
 TEST_SRC = tests/test_anneau.c $(SRCDIR)/physics.c $(SRCDIR)/geometry.c
 test: | $(BUILDDIR)
 	@for s in $(SCALES); do \
-		$(CC) $(CFLAGS) -DGRID_SIZE=$$((72 * s + 9)) -DSOURCE_RADIUS=$$((8 * s)) \
-			-DCOOLING_FACTOR=0 -o $(BUILDDIR)/test_anneau_s$$s $(TEST_SRC) -lm || exit 1; \
+		$(CC) $(CFLAGS) -DGRID_SIZE=$$((80 * s + 1)) "-DDX=(0.05/$$s)" \
+			-DDT=$$((200 / (s * s))).0 -o $(BUILDDIR)/test_anneau_s$$s $(TEST_SRC) -lm || exit 1; \
 	done
-	@printf "%-13s %s %4s %8s %8s %11s %11s %8s %8s %9s %8s\n" \
-		cas s grille Ra Rb P_simul P_exact "err_%" "bilan_%" R_mur Iter
+	@printf "%-12s %s %4s %10s %10s %8s %9s %8s %8s\n" \
+		cas s grille P_simul P_exact "err_%" "bilan_%" R_surf Iter
 	@for s in $(SCALES); do ./$(BUILDDIR)/test_anneau_s$$s || exit 1; done
 
 # Ne supprime que les fichiers de compilation : les CSV de résultats sont conservés.

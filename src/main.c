@@ -1,55 +1,44 @@
 #include "thermal_diffusion.h"
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define CSV_HEADER "Iter,Time,Mean,Std,Min,P_source,P_ext,P_cool\n"
-#define DEFAULT_ITER 60000  // régime établi vers 30 000 (t ≈ 15 000)
+#define CSV_HEADER "Iter,Time_h,T_air,T_mur,P_int,P_mur,P_ext\n"
+#define MAX_DAYS 60          // mode sans fenêtre : durée maximale simulée
+#define TOL_STEADY 1e-5      // régime établi : |P_ext − Q_int| < TOL · Q_int
 
 static int sim_alloc(Sim *s) {
     int N = GRID_SIZE * GRID_SIZE;
     s->T = calloc(N, sizeof(double));
     s->Tnext = calloc(N, sizeof(double));
-    s->alpha = calloc(N, sizeof(double));
-    s->zones = calloc(N, 1);
-    s->pixels = malloc(N * sizeof(uint32_t));
+    s->lambda = calloc(N, sizeof(double));
+    s->cap = calloc(N, sizeof(double));
     s->kx = calloc(N, sizeof(double));
     s->ky = calloc(N, sizeof(double));
-    if (!s->T || !s->Tnext || !s->alpha || !s->zones || !s->pixels || !s->kx || !s->ky)
-        return 0;
-    for (int i = 0; i < N; i++) s->Tnext[i] = AMBIENT_TEMP;
-    return 1;
+    s->g_air = calloc(N, sizeof(double));
+    s->g_ext = calloc(N, sizeof(double));
+    s->zones = calloc(N, 1);
+    s->pixels = malloc(N * sizeof(uint32_t));
+    s->poly = malloc(POLY_MAX * sizeof(Vec2));
+    s->q_int = Q_INT;
+    s->r_si = R_SI;
+    s->r_se = R_SE;
+    return s->T && s->Tnext && s->lambda && s->cap && s->kx && s->ky &&
+           s->g_air && s->g_ext && s->zones && s->pixels && s->poly;
 }
 
 static void sim_free(Sim *s) {
-    free(s->T);
-    free(s->Tnext);
-    free(s->alpha);
-    free(s->zones);
-    free(s->pixels);
-    free(s->kx);
-    free(s->ky);
+    free(s->T); free(s->Tnext); free(s->lambda); free(s->cap);
+    free(s->kx); free(s->ky); free(s->g_air); free(s->g_ext);
+    free(s->zones); free(s->pixels); free(s->poly);
 }
 
 // (Ré)initialise la géométrie du mode courant et remet le temps à zéro.
 static void sim_reset(Sim *s) {
     s->iteration = 0;
     s->sim_time = 0.0;
-    s->stat_power = 0.0f;
     init_geometry(s);
     compute_stats(s);
-}
-
-// Construit d'abord le flocon de référence (aire cible du carré iso-aire),
-// puis la géométrie demandée.
-static void sim_setup(Sim *s, int mode, int depth) {
-    if (mode == 0) {
-        s->mode = 1;
-        s->depth = KOCH_DEPTH_REF;
-        init_geometry(s);
-    }
-    s->mode = mode;
-    s->depth = depth;
-    sim_reset(s);
 }
 
 static void geom_name(const Sim *s, char *buf, size_t n) {
@@ -62,17 +51,19 @@ static void geom_name(const Sim *s, char *buf, size_t n) {
 static void csv_header(FILE *f, const Sim *s) {
     char name[16];
     geom_name(s, name, sizeof name);
-    fprintf(f, "# geometrie=%s profondeur=%d aire=%d murs=%d faces_air_mur=%d "
-               "faces_mur_ext=%d dt=%g\n",
-            name, s->mode ? s->depth : -1, s->n_int, s->n_wall,
-            s->n_faces_int_wall, s->n_faces_wall_ext, DT);
+    fprintf(f, "# geometrie=%s profondeur=%d aire_m2=%.4f perimetre_m=%.4f "
+               "px_air=%d px_mur=%d faces_air_mur=%d faces_mur_ext=%d "
+               "dx=%g dt=%g epaisseur=%g t_ext=%g q_int=%g\n",
+            name, s->mode ? s->depth : -1, s->area, s->perimeter,
+            s->n_int, s->n_wall, s->n_faces_int_wall, s->n_faces_wall_ext,
+            (double)DX, (double)DT, (double)WALL_THICKNESS, T_EXT, s->q_int);
     fprintf(f, CSV_HEADER);
 }
 
 static void csv_row(FILE *f, const Sim *s) {
-    fprintf(f, "%ld,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n",
-            s->iteration, s->sim_time, s->stat_avg, s->stat_std,
-            s->stat_min, s->stat_power, s->stat_pext, s->stat_pcool);
+    fprintf(f, "%ld,%.4f,%.5f,%.5f,%.3f,%.4f,%.4f\n",
+            s->iteration, s->sim_time / 3600.0, s->T_air, s->stat_T_wall,
+            s->q_int, s->stat_p_mur, s->stat_p_ext);
 }
 
 static void stop_recording(Sim *s) {
@@ -87,19 +78,17 @@ static void stop_recording(Sim *s) {
 /* Mode sans fenêtre : simulation complète enregistrée depuis l'itération 0  */
 /* ------------------------------------------------------------------------ */
 
+// n_iter = 0 : jusqu'au régime établi (au plus MAX_DAYS jours simulés)
 static int run_headless(int mode, int depth, long n_iter, const char *out) {
     Sim s = {0};
     if (!sim_alloc(&s)) {
         fprintf(stderr, "Allocation mémoire impossible\n");
         return 1;
     }
-    sim_setup(&s, mode, depth);
+    s.mode = mode;
+    s.depth = depth;
+    sim_reset(&s);
     check_stability(&s);
-
-    char name[16];
-    geom_name(&s, name, sizeof name);
-    printf("[%s] air = %d px, murs = %d px, faces air/mur = %d, faces mur/ext = %d\n",
-           name, s.n_int, s.n_wall, s.n_faces_int_wall, s.n_faces_wall_ext);
 
     FILE *f = fopen(out, "w");
     if (!f) {
@@ -110,30 +99,37 @@ static int run_headless(int mode, int depth, long n_iter, const char *out) {
     csv_header(f, &s);
     csv_row(f, &s);
 
-    printf("Simulation %s : %ld itérations → %s\n", name, n_iter, out);
-    long tick = n_iter / 10 > 0 ? n_iter / 10 : 1;
-    while (s.iteration < n_iter) {
+    char name[16];
+    geom_name(&s, name, sizeof name);
+    long max_iter = n_iter ? n_iter : (long)(MAX_DAYS * 86400.0 / DT);
+    int steady = 0;
+    while (s.iteration < max_iter) {
         step_physics(&s);
-        if (s.iteration % STATS_EVERY == 0 || s.iteration == n_iter) {
+        if (s.iteration % STATS_EVERY == 0 || s.iteration == max_iter) {
             compute_stats(&s);
             csv_row(f, &s);
-        }
-        if (s.iteration % tick == 0) {
-            fprintf(stderr, "  %3ld %%  t = %8.1f  T_moy = %6.2f °C  P = %8.2f\n",
-                    100 * s.iteration / n_iter, s.sim_time, s.stat_avg, s.stat_power);
+            if (s.iteration % (24 * STATS_EVERY) == 0) {
+                fprintf(stderr, "  jour %3.0f  T_air = %6.3f °C  P_ext = %7.2f W/m\n",
+                        s.sim_time / 86400.0, s.T_air, s.stat_p_ext);
+            }
+            if (fabs(s.stat_p_ext - s.q_int) < TOL_STEADY * s.q_int) {
+                steady = 1;
+                if (!n_iter) break;
+            }
         }
     }
     fclose(f);
 
-    printf("Final : T_moy = %.2f °C, écart-type = %.2f, T_min = %.2f °C\n",
-           s.stat_avg, s.stat_std, s.stat_min);
-    // En régime établi, la puissance injectée ressort entièrement
-    double out_p = s.stat_pext + s.stat_pcool;
-    printf("Bilan : P_source = %.3f, P_ext + P_cool = %.3f + %.3f = %.3f (écart %+.2f%%)\n",
-           s.stat_power, s.stat_pext, s.stat_pcool, out_p,
-           s.stat_power > 0 ? 100.0f * (out_p - s.stat_power) / s.stat_power : 0.0f);
+    double dT = s.T_air - T_EXT;
+    printf("%s : %s après %.1f jours → %s\n", name,
+           steady ? "régime établi" : "RÉGIME NON ÉTABLI", s.sim_time / 86400.0, out);
+    printf("  T_air = %.3f °C, T_mur moyenne = %.3f °C\n", s.T_air, s.stat_T_wall);
+    printf("  Bilan : Q_int = %.2f, P_mur = %.2f, P_ext = %.2f W/m (écart %+.4f %%)\n",
+           s.q_int, s.stat_p_mur, s.stat_p_ext, 100.0 * (s.stat_p_ext - s.q_int) / s.q_int);
+    printf("  Conductance de l'enveloppe G = P_ext / (T_air − T_ext) = %.3f W/(m·K)\n",
+           s.stat_p_ext / dT);
     sim_free(&s);
-    return 0;
+    return !steady;
 }
 
 /* ------------------------------------------------------------------------ */
@@ -161,28 +157,31 @@ static int run_gui(void) {
     s.tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888,
                               SDL_TEXTUREACCESS_STREAMING, GRID_SIZE, GRID_SIZE);
 
-    printf("\n");
-    printf("============================================\n");
-    printf("  Diffusion thermique\n");
-    printf("  Géométries fractales vs. classiques\n");
+    printf("\n============================================\n");
+    printf("  Diffusion thermique et géométries fractales\n");
     printf("============================================\n\n");
+    printf("MODÈLE PHYSIQUE (par mètre de hauteur) :\n");
+    printf("  - Pièce de %.0f m², air brassé (une seule température)\n", ROOM_AREA);
+    printf("  - Murs en béton de %.0f cm : λ = %.2f W/(m·K), ρc = %.1e J/(m³·K)\n",
+           100.0 * WALL_THICKNESS, LAMBDA_WALL, RHOC_WALL);
+    printf("  - Surfaces : R_si = %.2f, R_se = %.2f m²·K/W\n", R_SI, R_SE);
+    printf("  - Apports internes : %.0f W/m ; extérieur à %.0f °C\n", Q_INT, T_EXT);
+    printf("  - Grille : %d × %d, Δx = %.0f cm, Δt = %.0f s\n\n",
+           GRID_SIZE, GRID_SIZE, 100.0 * DX, (double)DT);
 
-    printf("MODÈLE PHYSIQUE :\n");
-    printf("  - Air intérieur : α = %.2f (diffusion rapide)\n", DIFF_AIR);
-    printf("  - Murs isolants : α = %.2f (diffusion lente)\n", DIFF_WALL);
-    printf("  - Ratio α_air/α_mur = %.1f\n", DIFF_AIR / DIFF_WALL);
-    printf("  - Extérieur : T = %.0f°C (Dirichlet)\n", AMBIENT_TEMP);
-    printf("  - Source : T = %.0f°C (radiateur)\n\n", SOURCE_TEMP);
-
-    sim_setup(&s, 0, KOCH_DEPTH_REF);
+    s.mode = 0;
+    s.depth = KOCH_DEPTH_REF;
+    sim_reset(&s);
     check_stability(&s);
 
-    printf("COMMANDES :\n");
+    printf("\nCOMMANDES :\n");
     printf("  ESPACE  - Changer de mode (carré ↔ fractale)\n");
     printf("  0 à %d   - Flocon de Koch de cette profondeur\n", KOCH_DEPTH_MAX);
     printf("  S       - Démarrer/arrêter enregistrement CSV\n");
     printf("  R       - Réinitialiser la simulation\n");
     printf("  Q       - Quitter\n");
+    printf("Couleurs : de %.0f °C (bleu) à %.0f °C (jaune) ; l'air est éclairci.\n",
+           T_EXT, T_DISPLAY_MAX);
     printf("Pour des données exploitables : --headless (voir README)\n");
     printf("============================================\n\n");
 
@@ -217,8 +216,8 @@ static int run_gui(void) {
                         if (s.csv) {
                             csv_header(s.csv, &s);
                             s.recording = 1;
-                            printf("Enregistrement vers %s (à partir de l'itération %ld)\n",
-                                   name, s.iteration);
+                            printf("Enregistrement vers %s (à partir de t = %.1f h)\n",
+                                   name, s.sim_time / 3600.0);
                         }
                     }
                 }
@@ -244,12 +243,13 @@ static int run_gui(void) {
         render(ren, &s);
         SDL_RenderPresent(ren);
 
-        char title[256];
+        char gname[16], title[256];
+        if (s.mode) snprintf(gname, sizeof gname, "KOCH %d", s.depth);
+        else snprintf(gname, sizeof gname, "CARRÉ");
         snprintf(title, sizeof title,
-                 "Mode:%s | Iter:%ld | T_moy:%.2f°C | P:%.1f %s",
-                 s.mode ? (const char *[]){"KOCH 0", "KOCH 1", "KOCH 2", "KOCH 3", "KOCH 4"}[s.depth]
-                        : "CARRÉ",
-                 s.iteration, s.stat_avg, s.stat_power,
+                 "%s | t = %.1f h | T_air = %.2f °C | P_ext = %.0f W/m | G = %.1f W/(m·K) %s",
+                 gname, s.sim_time / 3600.0, s.T_air, s.stat_p_ext,
+                 s.T_air > T_EXT ? s.stat_p_ext / (s.T_air - T_EXT) : 0.0,
                  s.recording ? "[REC]" : "");
         SDL_SetWindowTitle(win, title);
 
@@ -272,9 +272,9 @@ static void usage(const char *prog) {
             "  %s                                       fenêtre interactive\n"
             "  %s --headless <geometrie> [iter] [csv]   simulation sans fenêtre\n"
             "      geometrie : carre, koch0 ... koch%d (fractal = koch%d)\n"
-            "      iter      : nombre d'itérations (défaut %d)\n"
+            "      iter      : nombre d'itérations (défaut 0 : jusqu'au régime établi)\n"
             "      csv       : fichier de sortie (défaut res_<geometrie>.csv)\n",
-            prog, prog, KOCH_DEPTH_MAX, KOCH_DEPTH_REF, DEFAULT_ITER);
+            prog, prog, KOCH_DEPTH_MAX, KOCH_DEPTH_REF);
 }
 
 int main(int argc, char **argv) {
@@ -299,11 +299,11 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    long n_iter = DEFAULT_ITER;
+    long n_iter = 0;
     if (argc >= 4) {
         char *end;
         n_iter = strtol(argv[3], &end, 10);
-        if (*end != '\0' || n_iter <= 0) {
+        if (*end != '\0' || n_iter < 0) {
             fprintf(stderr, "Nombre d'itérations invalide : %s\n", argv[3]);
             return 1;
         }

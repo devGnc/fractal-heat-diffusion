@@ -1,21 +1,23 @@
 #include "thermal_diffusion.h"
 #include <math.h>
 
-uint32_t get_color(float T, uint8_t zone) {
-    if (zone == ZONE_WALL) return 0xFF6B6B6B;
-    
+// Carte de couleurs de T_EXT (bleu sombre) à T_DISPLAY_MAX (jaune). L'air est
+// éclairci pour le distinguer des murs ; l'extérieur est noir.
+static uint32_t get_color(double T, uint8_t zone) {
     if (zone == ZONE_EXT) return 0xFF101010;
-    
-    float norm = (T - AMBIENT_TEMP) / (SOURCE_TEMP - AMBIENT_TEMP);
-    if (norm < 0.0f) norm = 0.0f;
-    if (norm > 1.0f) norm = 1.0f;
-    
-    float v = sqrtf(norm);
-    uint8_t r = (uint8_t)(v * 255);
-    uint8_t g = (uint8_t)(v * v * 200);
-    uint8_t b = (uint8_t)((1.0f - v) * 120);
-    
-    return (255u << 24) | (r << 16) | (g << 8) | b;
+
+    double norm = (T - T_EXT) / (T_DISPLAY_MAX - T_EXT);
+    if (norm < 0.0) norm = 0.0;
+    if (norm > 1.0) norm = 1.0;
+
+    double v = sqrt(norm);
+    double r = v * 255, g = v * v * 200, b = (1.0 - v) * 120;
+    if (zone == ZONE_INT) {
+        r = r + 0.3 * (255 - r);
+        g = g + 0.3 * (255 - g);
+        b = b + 0.3 * (255 - b);
+    }
+    return (255u << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
 }
 
 void render(SDL_Renderer *ren, Sim *s) {

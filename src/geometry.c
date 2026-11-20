@@ -1,191 +1,178 @@
 #include "thermal_diffusion.h"
-#include <stdlib.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 
-void flood_fill_safe(uint8_t *zones, int sx, int sy) {
-    int n = GRID_SIZE * GRID_SIZE;
-    Point *stack = malloc(n * sizeof(Point));
-    if (!stack) return;
-    int top = 0;
-    
-    if (sx < 0 || sx >= GRID_SIZE || sy < 0 || sy >= GRID_SIZE) {
-        free(stack);
-        return;
-    }
-    if (zones[sy * GRID_SIZE + sx] != ZONE_EXT) {
-        free(stack);
-        return;
-    }
-    
-    stack[top++] = (Point){sx, sy};
-    zones[sy * GRID_SIZE + sx] = ZONE_INT;
-    
-    while (top > 0) {
-        Point p = stack[--top];
-        const int nb[4][2] = {{1,0}, {-1,0}, {0,1}, {0,-1}};
-        
-        for (int k = 0; k < 4; k++) {
-            int nx = p.x + nb[k][0], ny = p.y + nb[k][1];
-            if (nx >= 0 && nx < GRID_SIZE && ny >= 0 && ny < GRID_SIZE) {
-                int idx = ny * GRID_SIZE + nx;
-                if (zones[idx] == ZONE_EXT) {
-                    zones[idx] = ZONE_INT;
-                    if (top < n - 1) stack[top++] = (Point){nx, ny};
-                }
-            }
-        }
-    }
-    free(stack);
+/*
+ * La pièce est décrite par son contour intérieur, un polygone en mètres
+ * (flocon de Koch ou carré). Sur la grille :
+ *   - air : cases dont le centre est à l'intérieur du polygone ;
+ *   - mur : cases extérieures à moins de WALL_THICKNESS du polygone (le mur
+ *     est l'épaisseur du contour, vers l'extérieur) ;
+ *   - extérieur : le reste.
+ * Le mur suit le contour vers l'extérieur : il comble les creux plus étroits
+ * que son épaisseur, ce qui limite physiquement la profondeur utile du flocon.
+ */
+
+// Aire du flocon de profondeur n rapportée à celle du triangle initial :
+// A_n / A_0 = 8/5 − 3/5 · (4/9)^n
+static double koch_area_factor(int n) {
+    return 8.0 / 5.0 - 3.0 / 5.0 * pow(4.0 / 9.0, n);
 }
 
-void draw_line(uint8_t *zones, Point p1, Point p2, uint8_t val) {
-    int dx = abs(p2.x - p1.x), dy = abs(p2.y - p1.y);
-    int sx = (p1.x < p2.x) ? 1 : -1, sy = (p1.y < p2.y) ? 1 : -1;
-    int err = dx - dy;
-    
-    while (1) {
-        if (p1.x >= 0 && p1.x < GRID_SIZE && p1.y >= 0 && p1.y < GRID_SIZE)
-            zones[p1.y * GRID_SIZE + p1.x] = val;
-        if (p1.x == p2.x && p1.y == p2.y) break;
-        
-        int e2 = 2 * err;
-        if (e2 > -dy) { err -= dy; p1.x += sx; }
-        if (e2 < dx)  { err += dx; p1.y += sy; }
-    }
-}
-
-static Point round_point(Vec2 v) {
-    return (Point){ (int)lround(v.x), (int)lround(v.y) };
-}
-
-// Calcul en flottants, arrondi uniquement au tracé : pas d'erreur cumulée
-// d'une profondeur à l'autre.
-void koch(uint8_t *zones, Vec2 a, Vec2 b, int depth) {
+// Ajoute les sommets du côté [a, b] de profondeur n, sauf b (premier sommet
+// du côté suivant).
+static void koch_side(Vec2 a, Vec2 b, int depth, Vec2 *out, int *n) {
     if (depth == 0) {
-        draw_line(zones, round_point(a), round_point(b), ZONE_WALL);
+        out[(*n)++] = a;
         return;
     }
-    
     double dx = (b.x - a.x) / 3.0, dy = (b.y - a.y) / 3.0;
     Vec2 p3 = { a.x + dx, a.y + dy };
     Vec2 p4 = { a.x + 2.0 * dx, a.y + 2.0 * dy };
-    
     double ang = -M_PI / 3.0;
     Vec2 tip = {
         p3.x + dx * cos(ang) - dy * sin(ang),
         p3.y + dx * sin(ang) + dy * cos(ang)
     };
-    
-    koch(zones, a, p3, depth - 1);
-    koch(zones, p3, tip, depth - 1);
-    koch(zones, tip, p4, depth - 1);
-    koch(zones, p4, b, depth - 1);
+    koch_side(a, p3, depth - 1, out, n);
+    koch_side(p3, tip, depth - 1, out, n);
+    koch_side(tip, p4, depth - 1, out, n);
+    koch_side(p4, b, depth - 1, out, n);
 }
 
-// Aire du flocon de profondeur n rapportée à celle du triangle initial :
-// A_n / A_0 = 8/5 - 3/5 · (4/9)^n
-static double koch_area_factor(int n) {
-    return 8.0 / 5.0 - 3.0 / 5.0 * pow(4.0 / 9.0, n);
-}
-
-int count_interior_pixels(uint8_t *zones) {
-    int count = 0;
-    for (int i = 0; i < GRID_SIZE * GRID_SIZE; i++) {
-        if (zones[i] == ZONE_INT) count++;
+// Point dans le polygone (règle pair-impair)
+static int inside_polygon(const Vec2 *p, int n, double x, double y) {
+    int c = 0;
+    for (int i = 0, j = n - 1; i < n; j = i++) {
+        if ((p[i].y > y) != (p[j].y > y) &&
+            x < (p[j].x - p[i].x) * (y - p[i].y) / (p[j].y - p[i].y) + p[i].x)
+            c = !c;
     }
-    return count;
+    return c;
+}
+
+// Distance du point (x, y) au contour du polygone
+static double distance_polygon(const Vec2 *p, int n, double x, double y) {
+    double best = INFINITY;
+    for (int i = 0, j = n - 1; i < n; j = i++) {
+        double ex = p[i].x - p[j].x, ey = p[i].y - p[j].y;
+        double t = ((x - p[j].x) * ex + (y - p[j].y) * ey) / (ex * ex + ey * ey);
+        t = t < 0.0 ? 0.0 : (t > 1.0 ? 1.0 : t);
+        double dx = x - (p[j].x + t * ex), dy = y - (p[j].y + t * ey);
+        double d2 = dx * dx + dy * dy;
+        if (d2 < best) best = d2;
+    }
+    return sqrt(best);
+}
+
+/*
+ * Correction d'escalier. Sur la grille, une surface inclinée d'un angle θ est
+ * une suite de marches : pour une longueur L de mur, elle compte
+ * L·(|cos θ| + |sin θ|) de faces. Une résistance superficielle posée sur
+ * chaque face surestime donc l'échange de ce facteur (jusqu'à √2 à 45°), et
+ * ce biais ne diminue pas en raffinant la grille. On renvoie ici le facteur
+ * |n_x| + |n_y| de la normale n à la surface au point (x, y) (milieu d'une
+ * face) ; physics.c multiplie la résistance superficielle de la face par ce
+ * facteur. Surface intérieure (outer = 0) : normale du segment le plus proche.
+ * Surface extérieure (outer = 1) : c'est la courbe parallèle au contour à la
+ * distance WALL_THICKNESS, de normale dirigée depuis le point le plus proche
+ * du contour.
+ */
+double staircase_factor(const Sim *s, double x, double y, int outer) {
+    const Vec2 *p = s->poly;
+    double best = INFINITY, nx = 0.0, ny = 0.0;
+    for (int i = 0, j = s->n_poly - 1; i < s->n_poly; j = i++) {
+        double ex = p[i].x - p[j].x, ey = p[i].y - p[j].y;
+        double t = ((x - p[j].x) * ex + (y - p[j].y) * ey) / (ex * ex + ey * ey);
+        t = t < 0.0 ? 0.0 : (t > 1.0 ? 1.0 : t);
+        double qx = p[j].x + t * ex, qy = p[j].y + t * ey;
+        double d2 = (x - qx) * (x - qx) + (y - qy) * (y - qy);
+        if (d2 < best) {
+            best = d2;
+            if (outer) { nx = x - qx; ny = y - qy; }
+            else { nx = -ey; ny = ex; }
+        }
+    }
+    double len = hypot(nx, ny);
+    return len > 0.0 ? (fabs(nx) + fabs(ny)) / len : 1.0;
+}
+
+// Remplit zones, matériaux et températures initiales à partir de s->poly,
+// puis calcule les conductances. Utilisé aussi par le test de l'anneau.
+void geometry_from_polygon(Sim *s) {
+    const int G = GRID_SIZE;
+    const Vec2 *p = s->poly;
+    const int n = s->n_poly;
+
+    s->area = s->perimeter = 0.0;
+    double xmin = INFINITY, xmax = -INFINITY, ymin = INFINITY, ymax = -INFINITY;
+    for (int i = 0, j = n - 1; i < n; j = i++) {
+        s->area += p[j].x * p[i].y - p[i].x * p[j].y;
+        s->perimeter += hypot(p[i].x - p[j].x, p[i].y - p[j].y);
+        xmin = fmin(xmin, p[i].x); xmax = fmax(xmax, p[i].x);
+        ymin = fmin(ymin, p[i].y); ymax = fmax(ymax, p[i].y);
+    }
+    s->area = fabs(s->area) / 2.0;
+
+    const double e = WALL_THICKNESS;
+    if (xmin - e < DX || ymin - e < DX || xmax + e > (G - 1) * DX || ymax + e > (G - 1) * DX) {
+        fprintf(stderr, "Erreur : la pièce et ses murs dépassent de la grille\n");
+        exit(1);
+    }
+
+    for (int y = 0; y < G; y++) {
+        for (int x = 0; x < G; x++) {
+            int i = y * G + x;
+            double cx = (x + 0.5) * DX, cy = (y + 0.5) * DX;
+            uint8_t z = ZONE_EXT;
+            if (cx >= xmin - e && cx <= xmax + e && cy >= ymin - e && cy <= ymax + e) {
+                if (inside_polygon(p, n, cx, cy)) z = ZONE_INT;
+                else if (distance_polygon(p, n, cx, cy) <= e) z = ZONE_WALL;
+            }
+            s->zones[i] = z;
+            s->lambda[i] = z == ZONE_WALL ? LAMBDA_WALL : 0.0;
+            s->cap[i] = z == ZONE_WALL ? RHOC_WALL * DX * DX : 0.0;
+            s->T[i] = s->Tnext[i] = z == ZONE_EXT ? T_EXT : T_INIT;
+        }
+    }
+
+    compute_conductances(s);
+    s->T_air = T_INIT;
+    s->C_air = RHOC_AIR * s->n_int * DX * DX;
 }
 
 void init_geometry(Sim *s) {
-    int N = GRID_SIZE * GRID_SIZE;
-    int cx = GRID_SIZE / 2, cy = GRID_SIZE / 2;
-    
-    for (int i = 0; i < N; i++) {
-        s->zones[i] = ZONE_EXT;
-        s->T[i] = AMBIENT_TEMP;
-        s->alpha[i] = 0.0;
-    }
-    
-    // Rayon du cercle circonscrit au triangle du flocon de référence
-    double r_ref = GRID_SIZE / 3.5;
-    
+    const double c = GRID_SIZE * DX / 2.0;  // centre du domaine
+    s->n_poly = 0;
+
     if (s->mode == 0) {
-        int target_area = s->count_int_fractal;
-        
-        if (target_area == 0) {
-            double side_ref = r_ref * sqrt(3.0);
-            double area_triangle = (sqrt(3.0) / 4.0) * side_ref * side_ref;
-            target_area = (int)(koch_area_factor(KOCH_DEPTH_REF) * area_triangle);
-        }
-        
-        // Murs en cx ± r : l'intérieur fait (2r - 1)² pixels. On choisit r pour
-        // que cette aire soit la plus proche possible de la cible.
-        int r = (int)lround((sqrt((double)target_area) + 1.0) / 2.0);
-        
-        Point p1 = { cx - r, cy - r };
-        Point p2 = { cx + r, cy - r };
-        Point p3 = { cx + r, cy + r };
-        Point p4 = { cx - r, cy + r };
-        
-        draw_line(s->zones, p1, p2, ZONE_WALL);
-        draw_line(s->zones, p2, p3, ZONE_WALL);
-        draw_line(s->zones, p3, p4, ZONE_WALL);
-        draw_line(s->zones, p4, p1, ZONE_WALL);
-        
-        flood_fill_safe(s->zones, cx, cy);
-        s->count_int_square = count_interior_pixels(s->zones);
-        
-        printf("[CARRÉ] Aire intérieure = %d pixels (cible = %d, écart = %+.2f%%)\n",
-               s->count_int_square, target_area,
-               100.0 * (s->count_int_square - target_area) / (double)target_area);
-    }
-    else {
-        // Même aire théorique pour toutes les profondeurs : on agrandit le
-        // triangle de départ quand la profondeur est plus faible.
-        double r = r_ref * sqrt(koch_area_factor(KOCH_DEPTH_REF) / koch_area_factor(s->depth));
+        double h = sqrt(ROOM_AREA) / 2.0;
+        s->poly[0] = (Vec2){ c - h, c - h };
+        s->poly[1] = (Vec2){ c + h, c - h };
+        s->poly[2] = (Vec2){ c + h, c + h };
+        s->poly[3] = (Vec2){ c - h, c + h };
+        s->n_poly = 4;
+    } else {
+        // Même aire ROOM_AREA à toutes les profondeurs : on règle le rayon r
+        // du cercle circonscrit au triangle de départ.
+        double r = sqrt(ROOM_AREA / (koch_area_factor(s->depth) * 3.0 * sqrt(3.0) / 4.0));
         double side = r * sqrt(3.0);
-        
-        // Triangle centré sur son centre de gravité (cx, cy)
-        Vec2 p1 = { cx - side / 2.0, cy + r / 2.0 };
-        Vec2 p2 = { cx + side / 2.0, cy + r / 2.0 };
-        Vec2 p3 = { cx, cy - r };
-        
-        koch(s->zones, p1, p3, s->depth);
-        koch(s->zones, p3, p2, s->depth);
-        koch(s->zones, p2, p1, s->depth);
-        
-        flood_fill_safe(s->zones, cx, cy);
-        int area = count_interior_pixels(s->zones);
-        if (s->depth == KOCH_DEPTH_REF) s->count_int_fractal = area;
-        
-        printf("[KOCH %d] Aire intérieure = %d pixels\n", s->depth, area);
+        // Triangle centré sur son centre de gravité
+        Vec2 p1 = { c - side / 2.0, c + r / 2.0 };
+        Vec2 p2 = { c + side / 2.0, c + r / 2.0 };
+        Vec2 p3 = { c, c - r };
+        koch_side(p1, p3, s->depth, s->poly, &s->n_poly);
+        koch_side(p3, p2, s->depth, s->poly, &s->n_poly);
+        koch_side(p2, p1, s->depth, s->poly, &s->n_poly);
     }
-    
-    for (int y = 0; y < GRID_SIZE; y++) {
-        for (int x = 0; x < GRID_SIZE; x++) {
-            int idx = y * GRID_SIZE + x;
-            
-            if (s->zones[idx] == ZONE_INT) {
-                s->alpha[idx] = DIFF_AIR;
-                s->T[idx] = AMBIENT_TEMP;
-            }
-            else if (s->zones[idx] == ZONE_WALL) {
-                s->alpha[idx] = DIFF_WALL;
-                s->T[idx] = WALL_TEMP_INIT;
-            }
-            else {
-                s->alpha[idx] = 0.0;
-                s->T[idx] = AMBIENT_TEMP;
-            }
-        }
-    }
-    
-    for (int y = 0; y < GRID_SIZE; y++) {
-        for (int x = 0; x < GRID_SIZE; x++) {
-            if (in_source(x, y)) s->T[y * GRID_SIZE + x] = SOURCE_TEMP;
-        }
-    }
-    
-    compute_conductances(s);
+
+    geometry_from_polygon(s);
+
+    char name[16];
+    if (s->mode) snprintf(name, sizeof name, "KOCH %d", s->depth);
+    else snprintf(name, sizeof name, "CARRÉ");
+    printf("[%s] aire %.2f m² (grille : %.2f m²), périmètre intérieur %.2f m, "
+           "%d px de mur\n",
+           name, s->area, s->n_int * DX * DX, s->perimeter, s->n_wall);
 }

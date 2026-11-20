@@ -1,10 +1,12 @@
-"""Trace l'évolution temporelle de chaque simulation (T moyenne, puissance source).
+"""Trace l'évolution temporelle de chaque simulation.
 
 Usage :
-    python3 scripts/analyse.py                 # res_*.csv à la racine, sinon results/v0
+    python3 scripts/analyse.py                 # res_*.csv à la racine, sinon results/v3
     python3 scripts/analyse.py results/v2      # dossier explicite
 
-Chaque fichier res_<geometrie>.csv du dossier donne une courbe.
+Chaque fichier res_<geometrie>.csv du dossier donne une courbe. Format v3 :
+température de l'air et puissance évacuée par les murs en fonction du temps
+(heures). Les anciens formats (v0 à v2, unités de grille) restent lisibles.
 """
 import glob
 import os
@@ -23,7 +25,7 @@ def find_results_dir():
         return os.path.abspath(sys.argv[1])
     if glob.glob(os.path.join(repo_dir, "res_*.csv")):
         return repo_dir
-    return os.path.join(repo_dir, "results", "v0")
+    return os.path.join(repo_dir, "results", "v3")
 
 
 def sort_key(name):
@@ -50,8 +52,19 @@ for path in paths:
 names = sorted(runs, key=sort_key)
 print(f"Données lues dans : {results_dir} ({', '.join(names)})")
 
-# Les anciens CSV (v0) n'ont pas de colonne P_source
-has_power = all("P_source" in df for df in runs.values())
+v3 = all("T_air" in df for df in runs.values())
+if v3:
+    time_col, temp_col, power_col = "Time_h", "T_air", "P_ext"
+    temp_label = r"Température de l'air $T_{air}$ (°C)"
+    power_label = "Puissance évacuée par les murs (W/m)"
+    time_label = "Temps simulé (h)"
+else:
+    time_col, temp_col, power_col = "Time", "Mean", "P_source"
+    temp_label = r"Température moyenne de l'air $T_{moy}$ (°C)"
+    power_label = "Puissance de la source (u.a.)"
+    time_label = r"Temps simulé $t$ (unités de grille)"
+has_power = all(power_col in df for df in runs.values())  # absent en v0
+
 fig, axes = plt.subplots(2 if has_power else 1, 1, figsize=(10, 9 if has_power else 6),
                          sharex=True, squeeze=False)
 axes = axes[:, 0]
@@ -64,23 +77,24 @@ style = {name: dict(color="black" if name == "carre" else colors[i],
 
 for name in names:
     df = runs[name]
-    axes[0].plot(df["Time"], df["Mean"], label=label(name), **style[name])
-axes[0].set_ylabel(r"Température moyenne de l'air $T_{moy}$ (°C)")
-axes[0].set_title("Diffusion thermique : évolution vers le régime établi")
+    axes[0].plot(df[time_col], df[temp_col], label=label(name), **style[name])
+axes[0].set_ylabel(temp_label)
+axes[0].set_title("Évolution vers le régime établi")
 
 if has_power:
     for name in names:
         df = runs[name]
-        axes[1].plot(df["Time"], df["P_source"], label=label(name), **style[name])
-    axes[1].set_ylabel("Puissance de la source (u.a.)")
-    # Le transitoire initial écrase l'échelle : on cadre sur le régime établi
-    tail = pd.concat([df["P_source"].iloc[len(df) // 10:] for df in runs.values()])
-    axes[1].set_ylim(0, 1.2 * tail.max())
+        axes[1].plot(df[time_col], df[power_col], label=label(name), **style[name])
+    axes[1].set_ylabel(power_label)
+    if not v3:
+        # Le transitoire initial écrase l'échelle : on cadre sur le régime établi
+        tail = pd.concat([df[power_col].iloc[len(df) // 10:] for df in runs.values()])
+        axes[1].set_ylim(0, 1.2 * tail.max())
 
 for ax in axes:
     ax.grid(True, which="both", linestyle="--", alpha=0.7)
     ax.legend()
-axes[-1].set_xlabel(r"Temps simulé $t$ (unités de grille)")
+axes[-1].set_xlabel(time_label)
 
 plt.tight_layout()
 plt.show()
