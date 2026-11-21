@@ -38,7 +38,7 @@ study.
   In narrow notches, convection and radiation are actually weaker, which would
   reduce the gain (see [Limitations](#limitations-and-next-steps)).
 
-![Conductance of each shape against perimeter and outer wall surface](docs/rapport/figures/temoins.png)
+![Conductance of each shape against perimeter and outer wall surface](docs/rapport/figures/temoins_en.png)
 
 ## Build and run
 

@@ -9,7 +9,8 @@ Usage :
 2. Seuils : épaisseur e_c(n) à laquelle la profondeur n cesse de battre la
    profondeur n − 1 (G_n = G_{n−1}), comparée à la taille ℓ_n des détails
    ajoutés à la profondeur n, pour trois aires.
-3. Témoins : à e = 20 cm, flocon, carré crénelé de même périmètre, Minkowski.
+3. Témoins : à e = 20 cm, flocon, carré crénelé de même périmètre, Minkowski
+   (figure en français et en anglais : temoins.png, temoins_en.png).
 4. Ce qui compte : G en fonction de la surface extérieure du mur.
 """
 import os
@@ -144,29 +145,46 @@ print(ref.sort_values(["famille", "profondeur"])[
     ["geometrie", "perimetre_m", "detail_m", "surface_ext_m", "T_air", "G", "G_rel"]
 ].round(3).to_string(index=False), "\n")
 
-styles = {"carre": ("s", "Carré"), "koch": ("o-", "Flocon de Koch"),
-          "creneau": ("D--", "Carré crénelé (même périmètre que Koch n)"),
-          "minkowski": ("^-", "Île de Minkowski")}
+# Même figure en français (rapport, README.fr.md) et en anglais (README.md)
+TEXTES = {
+    "fr": {"carre": "Carré", "koch": "Flocon de Koch",
+           "creneau": "Carré crénelé (même périmètre que Koch n)",
+           "minkowski": "Île de Minkowski",
+           "x": ("Périmètre intérieur (m)",
+                 "Surface extérieure du mur (m, par mètre de hauteur)"),
+           "y": "Conductance G (W/(m·K))",
+           "titres": ("Même périmètre, résultats très différents",
+                      "La surface extérieure du mur ordonne tout"),
+           "fichier": "temoins.png"},
+    "en": {"carre": "Square", "koch": "Koch snowflake",
+           "creneau": "Crenellated square (same perimeter as Koch n)",
+           "minkowski": "Minkowski island",
+           "x": ("Inner perimeter (m)", "Outer wall surface (m, per metre of height)"),
+           "y": "Conductance G (W/(m·K))",
+           "titres": ("Same perimeter, very different results",
+                      "The outer wall surface orders everything"),
+           "fichier": "temoins_en.png"},
+}
+marques = {"carre": "s", "koch": "o-", "creneau": "D--", "minkowski": "^-"}
 pal = {"carre": "k", "koch": "tab:red", "creneau": "tab:gray", "minkowski": "tab:blue"}
-fig, axes = plt.subplots(1, 2, figsize=(13, 4.8))
-for famille, (m, label) in styles.items():
-    g = ref[ref["famille"] == famille].sort_values("profondeur")
-    for ax, xcol in zip(axes, ("perimetre_m", "surface_ext_m")):
-        ax.plot(g[xcol], g["G"], m, color=pal[famille], label=label)
-        if famille != "carre":
-            for _, r in g.iterrows():
-                ax.annotate(f" {int(r['profondeur'])}", (r[xcol], r["G"]),
-                            fontsize=8, color=pal[famille])
-axes[0].set_xlabel("Périmètre intérieur (m)")
-axes[1].set_xlabel("Surface extérieure du mur (m, par mètre de hauteur)")
-for ax in axes:
-    ax.set_ylabel("Conductance G (W/(m·K))")
-    ax.grid(True, ls="--", alpha=0.4)
-axes[0].set_title("Même périmètre, résultats très différents")
-axes[1].set_title("La surface extérieure du mur ordonne tout")
-axes[0].legend(fontsize=8)
-plt.tight_layout()
-save("temoins.png")
+for txt in TEXTES.values():
+    fig, axes = plt.subplots(1, 2, figsize=(13, 4.8))
+    for famille, m in marques.items():
+        g = ref[ref["famille"] == famille].sort_values("profondeur")
+        for ax, xcol in zip(axes, ("perimetre_m", "surface_ext_m")):
+            ax.plot(g[xcol], g["G"], m, color=pal[famille], label=txt[famille])
+            if famille != "carre":
+                for _, r in g.iterrows():
+                    ax.annotate(f" {int(r['profondeur'])}", (r[xcol], r["G"]),
+                                fontsize=8, color=pal[famille])
+    for ax, xlabel, titre in zip(axes, txt["x"], txt["titres"]):
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(txt["y"])
+        ax.set_title(titre)
+        ax.grid(True, ls="--", alpha=0.4)
+    axes[0].legend(fontsize=8)
+    plt.tight_layout()
+    save(txt["fichier"])
 
 # 4. Toutes les formes, toutes les épaisseurs : G et surface extérieure ----
 d36 = df[df["aire_m2"] == 36.0]

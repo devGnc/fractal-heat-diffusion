@@ -88,7 +88,7 @@ for script, arg, name in (("analyse.py", "results/v4/temps", "temps.png"),
     runpy.run_path("scripts/" + script, run_name="__main__")
     plt.close("all")
 # 4. Loi de la profondeur optimale et témoins (loi_epaisseur.png,
-# loi_seuils.png, temoins.png)
+# loi_seuils.png, temoins.png, temoins_en.png pour le README anglais)
 sys.argv = ["scripts/loi.py", OUT]
 runpy.run_path("scripts/loi.py", run_name="__main__")
 plt.close("all")
