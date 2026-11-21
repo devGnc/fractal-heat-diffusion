@@ -1069,10 +1069,10 @@ périmètre intérieur (à droite). La ligne pointillée est le carré.}
   donc les pointes : le gain réel dépend du brassage de l'air.
 \end{itemize}
 
-\subsection{Loi de la profondeur optimale}\label{sec-loi}
+\subsection{Règle empirique de la profondeur optimale}\label{sec-loi}
 
 L'optimum à la profondeur 3 dépend du mur de \qty{20}{\centi\metre}. Pour en tirer une
-loi, on a calculé le régime établi de pièces de \qty{36}{\square\metre} pour 21
+règle, on a calculé le régime établi de pièces de \qty{36}{\square\metre} pour 21
 épaisseurs de mur, de 5 à \qty{45}{\centi\metre} (les murs réels). Deux familles de formes servent de témoins
 (\cref{fig-temoins-formes}) :
 \begin{itemize}
@@ -1127,7 +1127,7 @@ pour les deux fractales (\qty{36}{\square\metre}).}
 \label{fig-loi-seuils}
 \end{figure}
 
-On en déduit une règle simple. La profondeur $n$ est utile tant que
+On en déduit une règle empirique. La profondeur $n$ est utile tant que
 $\ell_n = s/3^n > e/0,86$, d'où la profondeur optimale du flocon
 \begin{equation}
   n_{\text{opt}} = \left\lfloor \log_3 \frac{0,86\, s}{e} \right\rfloor ,
@@ -1220,7 +1220,7 @@ flocon, les pointes évacuent beaucoup et le fond des creux très peu.}
   une diffusion de conductivité $\la$, dont la valeur n'est qu'un ordre de grandeur ;
   sa valeur fixe la résistance de l'air entre la source et les pointes, et une
   étude de sensibilité reste à faire.
-  \item \textbf{Une seule aire.} La loi de l'optimum (\cref{sec-loi}) est établie à
+  \item \textbf{Une seule aire.} La règle empirique (\cref{sec-loi}) est établie à
   \qty{36}{\square\metre}. La vérifier à d'autres aires dirait si le rapport
   $e_c/\ell_n$ est universel.
   \item \textbf{Position de la source.} Une source près d'un mur, ou plusieurs sources
@@ -1332,9 +1332,9 @@ make run                          # fenetre interactive
 make test                         # validation (solution exacte, 3 resolutions)
 make data                         # courbes dans le temps (res_*.csv)
 make regime                       # regime etabli sur grille fine (regime_*.csv)
-make loi                          # loi de l'optimum (epaisseurs, aires, temoins)
+make loi                          # profondeur optimale (epaisseurs, temoins)
 make figures                      # figures du rapport
-make gif                          # animation de la fenetre (ffmpeg)
+make animation                    # animations de la fenetre (ffmpeg)
 make rapport                      # ce document
 \end{lstlisting}
 

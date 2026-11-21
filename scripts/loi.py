@@ -1,4 +1,4 @@
-"""Loi de la profondeur optimale et formes témoins (results/v4/loi/loi.csv).
+"""Règle empirique de la profondeur optimale et formes témoins (results/v4/loi/loi.csv).
 
 Usage :
     python3 scripts/loi.py              # tableaux + figures à l'écran

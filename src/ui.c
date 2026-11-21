@@ -416,7 +416,7 @@ int capture_gui(const char *path, int depth, int view, double hours) {
 }
 
 // Film de la fenêtre sans l'ouvrir : `frames` images brutes (BGRA, WIN_W × WIN_H,
-// échelle 1) écrites sur la sortie standard, à envoyer à ffmpeg (make gif).
+// échelle 1) écrites sur la sortie standard, à envoyer à ffmpeg (make animation).
 // Le temps simulé par image croît de 5 % de t (au moins 5 s) : quelques
 // minutes pour voir la chaleur quitter la source, puis une semaine en
 // quelques secondes de film.

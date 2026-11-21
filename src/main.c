@@ -131,7 +131,7 @@ static void usage(const char *prog) {
             "      image de la fenêtre sans l'ouvrir (vue : temp ou flux ;\n"
             "      défaut : profondeur 3, temp, 168 h)\n"
             "  %s --film [profondeur] [images] | ffmpeg ...\n"
-            "      images brutes BGRA %dx%d sur la sortie standard (voir make gif ;\n"
+            "      images brutes BGRA %dx%d sur la sortie standard (voir make animation ;\n"
             "      défaut : profondeur 3, 200 images)\n"
             "  geometrie : carre, koch0 ... koch%d (fractal = koch%d),\n"
             "              creneau1 ... creneau%d (témoin non fractal du flocon de même profondeur),\n"

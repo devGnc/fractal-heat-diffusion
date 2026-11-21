@@ -17,7 +17,7 @@ HDR = $(wildcard $(SRCDIR)/*.h)
 # Fichiers objets (dans build/)
 OBJ = $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.o,$(SRC))
 
-.PHONY: all clean run plot data regime loi test rapport gif figures
+.PHONY: all clean run plot data regime loi test rapport animation reencoder figures
 
 all: $(TARGET)
 
@@ -49,22 +49,36 @@ $(FINE): $(SRC) $(HDR) | $(BUILDDIR)
 regime: $(FINE)
 	@for g in $(GEOMETRIES); do ./$(FINE) --regime $$g || exit 1; done
 
-# Loi de la profondeur optimale : régime établi sur la grille fine pour 21
+# Règle empirique de la profondeur optimale : régime établi sur la grille fine pour 21
 # épaisseurs de mur (5 à 45 cm), 36 m², flocons, carrés crénelés et îles de
 # Minkowski (273 calculs, tous présents dans results/v4/loi/loi.csv : la cible
 # ne recalcule que ce qui manque).
 loi: $(FINE)
 	python3 scripts/balayage.py
 
-# Animation du README : la fenêtre filmée sans l'ouvrir (une semaine simulée,
-# ≈ 1 min), encodée par ffmpeg avec une palette optimisée.
-GIF = docs/captures/diffusion.gif
-gif: $(TARGET)
+# Animations de la fenêtre, filmée sans l'ouvrir (une semaine simulée, ≈ 1 min) :
+# GIF léger pour le README (640 px, 10 images/s, 64 couleurs, ≈ 1,5 Mo), MP4 et
+# WebM pour le web (840 px, quelques centaines de Ko).
+ANIM = docs/captures/diffusion
+ANIM_FILTRES = [0]split=3[g][m][w];\
+	[g]fps=10,scale=640:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=64[p];\
+	[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle[gif];\
+	[m]scale=840:-2:flags=lanczos,format=yuv420p[mp4];[w]scale=840:-2:flags=lanczos[webm]
+ANIM_SORTIES = -map "[gif]" $(ANIM).gif \
+	-map "[mp4]" -c:v libx264 -preset veryslow -crf 30 -movflags +faststart -an $(ANIM).mp4 \
+	-map "[webm]" -c:v libvpx-vp9 -crf 40 -b:v 0 -row-mt 1 -an $(ANIM).webm
+animation: $(TARGET)
 	./$(TARGET) --film 3 200 | ffmpeg -loglevel error -y -f rawvideo -pixel_format bgra \
-		-video_size 1400x780 -framerate 20 -i - -vf "tpad=stop_mode=clone:stop_duration=2,\
-		scale=840:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];\
-		[b][p]paletteuse=dither=bayer:bayer_scale=4" $(GIF)
-	@ls -lh $(GIF)
+		-video_size 1400x780 -framerate 20 -i - \
+		-filter_complex "[0]tpad=stop_mode=clone:stop_duration=2[s];$(subst [0],[s],$(ANIM_FILTRES))" \
+		$(ANIM_SORTIES)
+	@ls -lh $(ANIM).*
+
+# Réencode les animations à partir d'un GIF déjà produit, sans simulation :
+# make reencoder SOURCE=chemin/vers/source.gif
+reencoder:
+	ffmpeg -loglevel error -y -i $(SOURCE) -filter_complex "$(ANIM_FILTRES)" $(ANIM_SORTIES)
+	@ls -lh $(ANIM).*
 
 plot:
 	python3 scripts/analyse.py
