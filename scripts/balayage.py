@@ -22,17 +22,18 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = os.path.join(REPO, "build", "thermalfractalsim_fin")
 OUT = os.path.join(REPO, "results", "v4", "loi", "loi.csv")
 
+# Épaisseurs de mur réalistes, de 5 à 45 cm, resserrées là où se trouvent les
+# seuils (de quelques cm à une vingtaine de cm à 36 m²).
 EPAISSEURS = [0.05, 0.06, 0.07, 0.08, 0.09, 0.10, 0.11, 0.12, 0.14, 0.16, 0.18,
-              0.20, 0.22, 0.24, 0.26, 0.28, 0.30, 0.32, 0.35, 0.40, 0.45, 0.50,
-              0.60, 0.70, 0.80, 0.90, 1.00]
+              0.20, 0.22, 0.24, 0.26, 0.28, 0.30, 0.32, 0.35, 0.40, 0.45]
 KOCH = ["carre"] + [f"koch{n}" for n in range(5)]
 MINKOWSKI = [f"minkowski{n}" for n in range(1, 4)]
 CRENEAU = [f"creneau{n}" for n in range(1, 5)]
 
-# (aire, géométries) : toutes les formes à 36 m², flocons et Minkowski à 16 et 64 m²
-PLAN = [(36.0, KOCH + CRENEAU + MINKOWSKI),
-        (16.0, KOCH + MINKOWSKI),
-        (64.0, KOCH + MINKOWSKI)]
+# (aire, géométries) : toutes les formes à 36 m². D'autres aires peuvent être
+# ajoutées ici (par exemple (16.0, KOCH + MINKOWSKI)) pour vérifier que le
+# seuil suit la taille des détails ; loi.py les prend en compte.
+PLAN = [(36.0, KOCH + CRENEAU + MINKOWSKI)]
 
 COLONNES = ["aire_m2", "epaisseur_m", "geometrie", "famille", "profondeur",
             "perimetre_m", "surface_int_m", "surface_ext_m", "dx_m",

@@ -1,7 +1,44 @@
 # Diffusion thermique et géométries fractales
 
-Projet de recherche personnel de Devrim Genc. Ce dépôt reprend la simulation
-de l'ancien dépôt GitLab (`tests/diffusion`).
+*[English version](README.en.md)*
+
+**À aire égale, une pièce en forme de fractale évacue-t-elle mieux la chaleur qu'une
+pièce carrée ?** Simulation en C de l'équation de la chaleur (volumes finis, schéma
+implicite, gradient conjugué), validée sur une solution exacte, avec une fenêtre SDL
+qui montre la diffusion en direct.
+
+![Carré et flocon de Koch de même aire, chauffés par la même source pendant une semaine](docs/captures/diffusion.gif)
+
+*Même aire (36 m²), même source de 2 kW, murs en béton de 20 cm : après une semaine,
+le carré est à 30 °C, le flocon de Koch à 26 °C. Les traits fins sont les isothermes
+(une tous les 1 °C).*
+
+Projet de recherche personnel de Devrim Genc, issu d'un modèle écrit en classe
+préparatoire et repris de fond en comble : unités physiques, schémas validés,
+convergence en maillage, étude paramétrique.
+
+## En bref
+
+- **La fractale évacue mieux, jusqu'à un certain point.** Le flocon de Koch de
+  profondeur 3 évacue **66 %** de chaleur en plus par degré d'écart que le carré. À la
+  profondeur 4, le gain retombe à 44 % : les détails (9 cm) sont plus fins que le mur
+  (20 cm), qui les bouche.
+- **Loi de l'optimum.** Un niveau de détail sert tant que le mur est plus fin que
+  lui : la profondeur n cesse d'être utile au-delà d'une épaisseur
+  **e_c ≈ 0,86 ℓ_n** (ℓ_n : taille des détails du niveau n ; établi à 36 m²). D'où une règle simple
+  pour la profondeur optimale : n_opt = ⌊log₃(0,86 s / e)⌋.
+- **Ce n'est pas la longueur du mur qui compte.** Un carré crénelé de même périmètre
+  que le flocon fait aussi bien tant que ses créneaux sont larges, puis s'effondre
+  d'un coup (+6 % au lieu de +66 %). La fractale, elle, se dégrade progressivement :
+  son avantage vient de ses **détails à plusieurs échelles**.
+- **Limite principale.** Les échanges de surface sont supposés identiques partout ;
+  dans les creux étroits, la convection et le rayonnement sont plus faibles en
+  réalité, ce qui réduirait le gain (voir [Limites](#limites-et-pistes)).
+
+![Conductance des formes en fonction du périmètre et de la surface extérieure du mur](docs/rapport/figures/temoins.png)
+
+Le détail du modèle, des mathématiques et des méthodes numériques est dans le
+[rapport (PDF)](docs/rapport/rapport.pdf).
 
 ## Problématique
 
@@ -13,28 +50,120 @@ pertes en hiver et plus d'apports en canicule. La fractale est donc étudiée co
 **échangeur** (façade, mur, dissipateur) chargé d'évacuer de la chaleur produite à
 l'intérieur vers un milieu plus froid (air nocturne, sol).
 
-On compare une pièce dont le contour est un **flocon de Koch** à une **pièce carrée
-de même aire** (36 m²). Une source de chaleur (radiateur, appareil) placée au centre
+On compare des pièces dont le contour est un **flocon de Koch** (profondeur 0 à 4) à
+une **pièce carrée de même aire** (36 m²). Une source de chaleur placée au centre
 chauffe l'air, qui transmet la chaleur aux murs en béton, puis à l'extérieur, à
 20 °C. La grandeur étudiée est la **conductance de l'enveloppe**
 G = P / (T_air − T_ext) : la puissance évacuée par degré d'écart entre l'air
 intérieur (température moyenne) et l'extérieur.
 
-Mots-clés : fractales, suites, récursivité, programmation en C, équation de la
-chaleur, volumes finis, schéma implicite, systèmes tridiagonaux, gradient conjugué,
-complexité.
+Mots-clés : fractales, récursivité, C, équation de la chaleur, volumes finis, schéma
+implicite (Douglas-Rachford), algorithme de Thomas, gradient conjugué, validation,
+convergence en maillage.
 
 ## Compilation et exécution
 
 ```bash
-brew install sdl2 pkg-config      # macOS
+brew install sdl2 pkg-config      # macOS (Linux : libsdl2-dev pkg-config)
 make                              # compile ./thermalfractalsim
 make run                          # fenêtre interactive
-make data                         # courbes dans le temps, carré + Koch 0 à 4 (≈ 2 min)
-make regime                       # régime établi précis, grille de 1,25 cm (≈ 1 min)
-make plot                         # courbes temporelles + étude en profondeur
 make test                         # validation : pièce circulaire comparée à la solution exacte (≈ 1 min)
+make regime                       # régime établi précis, carré + Koch 0 à 4 (≈ 1 min)
+make loi                          # loi de l'optimum : épaisseurs, formes témoins (résultats déjà fournis)
+make figures                      # figures du rapport et du README
+make gif                          # animation du README (≈ 1 min, ffmpeg)
+make data                         # courbes dans le temps (≈ 2 min)
+make rapport                      # rapport LaTeX
 ```
+
+Python : `numpy`, `pandas`, `matplotlib`.
+
+## Résultats
+
+### Régime établi, mur de 20 cm
+
+`make regime`, régime établi, grille de 1,25 cm (`results/v4/regime/`) :
+
+| | Périmètre intérieur | T_air moyenne | G (W/(m·K)) | G / G_carré | G par mètre de mur |
+|---|---|---|---|---|---|
+| Carré | 24,0 m | 30,04 °C | 79,7 | 1,00 | 3,32 |
+| Koch 0 (triangle) | 27,4 m | 29,01 °C | 88,8 | 1,11 | 3,25 |
+| Koch 1 | 31,6 m | 28,00 °C | 100,0 | 1,26 | 3,17 |
+| Koch 2 | 40,0 m | 26,75 °C | 118,6 | 1,49 | 2,97 |
+| Koch 3 | 52,1 m | 26,03 °C | **132,6** | **1,66** | 2,54 |
+| Koch 4 | 68,9 m | 26,99 °C | 114,4 | 1,44 | 1,66 |
+
+**Lecture.**
+- Avec la même source, le flocon de profondeur 3 reste à **26,0 °C** contre
+  **30,0 °C** pour le carré : il évacue 66 % de chaleur en plus par degré d'écart.
+- Le gain est inférieur à l'allongement du mur (+117 % de périmètre à la
+  profondeur 3) : chaque mètre de mur sert de moins en moins (dernière colonne).
+  Dans les creux, les murs voisins se partagent la chaleur ; la surface extérieure
+  du mur est plus courte que la surface intérieure ; et la chaleur doit traverser
+  l'air jusqu'aux pointes, loin de la source.
+- **Il existe une profondeur optimale, ici 3.** À la profondeur 4, les détails
+  (9 cm) sont plus petits que l'épaisseur du mur (20 cm) : le mur bouche les creux,
+  sa surface extérieure raccourcit, et G diminue. L'épaisseur du mur limite
+  physiquement la fractale.
+- Par rapport au modèle v3 (air à une seule température), le gain du flocon passe
+  de +76 % à +66 % : la résistance de l'air entre la source et les murs pénalise les
+  pointes, éloignées de la source.
+
+### Loi de la profondeur optimale
+
+`make loi` calcule le régime établi d'une pièce de 36 m² pour 21 épaisseurs de mur
+(5 à 45 cm), avec deux familles de formes témoins (`results/v4/loi/loi.csv`,
+`scripts/loi.py`) :
+
+- le **carré crénelé** de profondeur n a le même périmètre que le flocon de
+  profondeur n, mais une seule taille de détail : il dit si c'est la fractale qui
+  compte, ou seulement la longueur du mur ;
+- l'**île de Minkowski**, une autre fractale (dimension 1,5 contre 1,26 pour Koch).
+
+![Formes témoins](docs/rapport/figures/temoins_formes.png)
+
+![Conductance relative au carré en fonction de l'épaisseur du mur](docs/rapport/figures/loi_epaisseur.png)
+
+**La profondeur optimale baisse quand le mur s'épaissit.** Pour le flocon de 36 m²,
+elle vaut 4 jusqu'à 7 cm, 3 de 8 à 22 cm, puis 2 jusqu'à 45 cm. Chaque courbe chute
+peu avant l'épaisseur égale à la taille ℓ_n de ses détails (pointillés) : le mur,
+qui suit le contour vers l'extérieur, comble alors les creux les plus fins.
+
+**Le seuil suit la taille des détails.** La profondeur n cesse de battre la
+profondeur n − 1 au-delà d'une épaisseur e_c ≈ 0,86 ℓ_n pour le flocon (0,85 et
+0,87 pour les profondeurs 3 et 4), et e_c ≈ 0,66 ℓ_n pour l'île de Minkowski (0,60
+et 0,73). D'où, pour le flocon, n_opt = ⌊log₃(0,86 s / e)⌋, avec s ≈ 7,3 m le côté
+du triangle de départ : la règle redonne les plages ci-dessus. Elle repose sur
+quatre seuils à une seule aire : la tendance est nette, la constante reste approchée.
+
+**Ce n'est pas la longueur du mur qui compte.** À 20 cm, le carré crénelé égale le
+flocon tant que ses créneaux sont plus larges que le mur (+24 % et +44 % aux
+profondeurs 1 et 2, contre +26 % et +49 %), puis s'effondre d'un coup (+6 % à la
+profondeur 3, contre +66 %). Le flocon garde ses niveaux plus grossiers quand le mur
+bouche le plus fin : il se dégrade progressivement. L'île de Minkowski fait mieux
+encore (+107 % à la profondeur 2). La grandeur qui ordonne toutes les formes est la
+**surface extérieure du mur** (figure du haut, à droite) : corrélation de 0,82
+entre log G et log(surface extérieure) sur tous les calculs à 36 m², contre
+0,46 avec le périmètre intérieur.
+
+### Convergence en maillage
+
+G en W/(m·K), `--regime` :
+
+| | Δx = 5 cm | 3,5 cm (fenêtre) | 2,5 cm | 1,25 cm (`make regime`) | 0,625 cm |
+|---|---|---|---|---|---|
+| Carré | 79,7 | 79,9 | 79,7 | 79,7 | 79,7 |
+| Koch 0 | 88,4 | 88,5 | 88,6 | 88,8 | 88,8 |
+| Koch 2 | 117,6 | 117,4 | 118,3 | 118,6 | 119,2 |
+| Koch 3 | 127,8 | 129,8 | 129,5 | 132,6 | 132,9 |
+| Koch 4 | 106,3 | 107,2 | 110,7 | 114,4 | 115,5 |
+
+Entre les grilles de 1,25 et 0,625 cm, G ne varie plus que de 0,03 % (Koch 0) à
+1 % (Koch 4) : les valeurs de `make regime` sont justes à environ 1 % près, et
+l'ordre des résultats (maximum à la profondeur 3) est le même à toutes les
+résolutions. Sur des grilles grossières, les pointes à 60° et les creux étroits sont
+mal résolus : la fenêtre (3,5 cm) sous-estime G de Koch 3 d'environ 2 %, celui de
+Koch 4 d'environ 7 %.
 
 ## Fenêtre interactive
 
@@ -96,10 +225,14 @@ python3 scripts/analyse.py enregistrements/2026-11-20_15h02m10
 ./thermalfractalsim --headless koch3                # dans le temps, jusqu'au régime établi → res_koch3.csv
 ./thermalfractalsim --headless koch2 20000 f.csv    # nombre d'itérations et fichier imposés
 ./thermalfractalsim --regime koch3                  # régime établi seul, en une fraction de seconde → regime_koch3.csv
+./thermalfractalsim --regime koch3 --epaisseur 0.1 --aire 64   # mur de 10 cm, pièce de 64 m²
 ./thermalfractalsim --capture image.bmp 3 flux 120  # image de la fenêtre (profondeur, vue, heures)
+./thermalfractalsim --film 3 200 | ffmpeg ...       # images brutes de la fenêtre (voir make gif)
 ```
 
-Géométries : `carre`, `koch0` (triangle) à `koch4`, et `fractal` (= `koch2`).
+Géométries : `carre`, `koch0` (triangle) à `koch4`, `fractal` (= `koch2`),
+`creneau1` à `creneau4` (carré crénelé de même périmètre que le flocon de même
+profondeur) et `minkowski1` à `minkowski3` (île de Minkowski).
 Le résumé affiche la température de l'air (moyenne et maximum), le **bilan
 d'énergie** (en régime établi, `P_ext = Q_int`) et la conductance G.
 
@@ -123,21 +256,25 @@ garder.
 ```
 src/
   thermal_diffusion.h   paramètres physiques et structure Sim
-  geometry.c            contours (Koch récursif, carré) de même aire, murs épais, source, corrections de surface
+  geometry.c            contours (Koch, carré crénelé, Minkowski, carré) de même aire, murs épais, source, corrections de surface
   physics.c             volumes finis, schéma implicite (Douglas-Rachford, Thomas), gradient conjugué, bilan
   io.c                  allocation, réinitialisation, format CSV
   render.c              cartes de couleurs (température, flux), flux de chaleur dans les murs
-  ui.c                  fenêtre interactive, sessions d'enregistrement, --capture
+  ui.c                  fenêtre interactive, sessions d'enregistrement, --capture, --film
   font.c                police bitmap intégrée
-  main.c                ligne de commande : --headless, --regime, --capture
+  main.c                ligne de commande : --headless, --regime, --capture, --film
 tests/test_anneau.c     validation sur une pièce circulaire (solution exacte), plusieurs résolutions
 scripts/analyse.py      évolution temporelle des simulations d'un dossier (ou d'une session)
 scripts/profondeur.py   régime établi en fonction de la profondeur de Koch
-results/v0/ … v2/       anciens modèles (unités de grille)
-results/v3/             modèle physique avec air à une seule température
+scripts/formes.py       contours en Python (mêmes constructions que geometry.c), taille des détails
+scripts/balayage.py     balayage épaisseur × aire × forme (make loi)
+scripts/loi.py          analyse du balayage : profondeur optimale, seuils, témoins
+results/v0/ … v3/       anciens modèles (historique)
 results/v4/temps/       modèle actuel, courbes dans le temps (make data)
 results/v4/regime/      modèle actuel, régime établi sur grille fine (make regime)
-docs/                   export GeoGebra ; captures/ : images de la fenêtre
+results/v4/loi/         balayage de la loi de l'optimum (make loi)
+docs/rapport/           rapport LaTeX, ses figures et leur script
+docs/captures/          images et animation de la fenêtre
 ```
 
 ## Modèle (v4)
@@ -192,52 +329,6 @@ Coupe horizontale d'une pièce, en unités physiques ; les grandeurs sont donné
     de 3,5 cm n'en faisait que 17,5. Chaque face de surface reçoit la résistance de
     l'épaisseur manquante (ou en trop) entre la face et la vraie surface.
 
-## Résultats (v4)
-
-`make regime`, régime établi, grille de 1,25 cm (`results/v4/regime/`) :
-
-| | Périmètre intérieur | T_air moyenne | G (W/(m·K)) | G / G_carré | G par mètre de mur |
-|---|---|---|---|---|---|
-| Carré | 24,0 m | 30,04 °C | 79,7 | 1,00 | 3,32 |
-| Koch 0 (triangle) | 27,4 m | 29,01 °C | 88,8 | 1,11 | 3,25 |
-| Koch 1 | 31,6 m | 28,00 °C | 100,0 | 1,26 | 3,17 |
-| Koch 2 | 40,0 m | 26,75 °C | 118,6 | 1,49 | 2,97 |
-| Koch 3 | 52,1 m | 26,03 °C | **132,6** | **1,66** | 2,54 |
-| Koch 4 | 68,9 m | 26,99 °C | 114,4 | 1,44 | 1,66 |
-
-**Lecture.**
-- Avec la même source, le flocon de profondeur 3 reste à **26,0 °C** contre
-  **30,0 °C** pour le carré : il évacue 66 % de chaleur en plus par degré d'écart.
-- Le gain est inférieur à l'allongement du mur (+117 % de périmètre à la
-  profondeur 3) : chaque mètre de mur sert de moins en moins (dernière colonne).
-  Dans les creux, les murs voisins se partagent la chaleur ; la surface extérieure
-  du mur est plus courte que la surface intérieure ; et la chaleur doit traverser
-  l'air jusqu'aux pointes, loin de la source.
-- **Il existe une profondeur optimale, ici 3.** À la profondeur 4, les détails
-  (9 cm) sont plus petits que l'épaisseur du mur (20 cm) : le mur bouche les creux,
-  sa surface extérieure raccourcit, et G diminue. L'épaisseur du mur limite
-  physiquement la fractale.
-- Par rapport au modèle v3 (air à une seule température), le gain du flocon passe
-  de +76 % à +66 % : la résistance de l'air entre la source et les murs pénalise les
-  pointes, éloignées de la source.
-
-**Convergence en maillage** (G en W/(m·K), `--regime`) :
-
-| | Δx = 5 cm | 3,5 cm (fenêtre) | 2,5 cm | 1,25 cm (`make regime`) | 0,625 cm |
-|---|---|---|---|---|---|
-| Carré | 79,7 | 79,9 | 79,7 | 79,7 | 79,7 |
-| Koch 0 | 88,4 | 88,5 | 88,6 | 88,8 | 88,8 |
-| Koch 2 | 117,6 | 117,4 | 118,3 | 118,6 | 119,2 |
-| Koch 3 | 127,8 | 129,8 | 129,5 | 132,6 | 132,9 |
-| Koch 4 | 106,3 | 107,2 | 110,7 | 114,4 | 115,5 |
-
-Entre les grilles de 1,25 et 0,625 cm, G ne varie plus que de 0,03 % (Koch 0) à
-1 % (Koch 4) : les valeurs de `make regime` sont justes à environ 1 % près, et
-l'ordre des résultats (maximum à la profondeur 3) est le même à toutes les
-résolutions. Sur des grilles grossières, les pointes à 60° et les creux étroits sont
-mal résolus : la fenêtre (3,5 cm) sous-estime G de Koch 3 d'environ 2 %, celui de
-Koch 4 d'environ 7 %.
-
 ## Validation : test de la pièce circulaire
 
 `make test` simule une pièce circulaire de rayon Ra = 1,6 m, chauffée par la source
@@ -289,21 +380,31 @@ mur.
   algorithme de Thomas) ; régime établi direct par gradient conjugué ; fenêtre
   centrée sur la diffusion (isothermes, vitesse automatique, texte réduit) ;
   sessions d'enregistrement.
+- v4.1 : options `--epaisseur` et `--aire` ; formes témoins (carré crénelé, île de
+  Minkowski) ; balayage de la loi de l'optimum ; animation
+  (`--film`, `make gif`).
 
-## Limites actuelles et pistes
+## Limites et pistes
 
-1. **Conductivité effective de l'air** : la convection est représentée par une
-   diffusion. λ_air fixe la répartition de la chaleur dans la pièce et pèse sur les
-   résultats (les pointes du flocon sont loin de la source) : à faire varier.
-2. **Position de la source** : au centre de gravité. Une source près d'un mur, ou
+1. **Échanges de surface uniformes** (limite principale). Les résistances de surface
+   sont celles d'un mur plan isolé, appliquées partout. Dans les creux étroits, l'air
+   circule moins bien et les parois qui se font face échangent leur rayonnement entre
+   elles plutôt qu'avec l'extérieur. Ces deux effets pénalisent les détails fins et
+   réduiraient le gain de la fractale, peut-être fortement. Prochaine étape : facteurs
+   de forme pour le rayonnement, convection selon l'ouverture des creux.
+2. **Conductivité effective de l'air** : la convection est représentée par une
+   diffusion dont la valeur, 100 W/(m·K), n'est qu'un ordre de grandeur. Elle fixe
+   la résistance de l'air entre la source et les pointes du flocon : à faire varier.
+3. **Une seule aire** : la loi de l'optimum est établie à 36 m². La vérifier à
+   d'autres aires (16, 64 m²) dirait si le rapport e_c/ℓ est universel ; il suffit
+   d'ajouter ces aires dans `scripts/balayage.py`.
+4. **Position de la source** : au centre de gravité. Une source près d'un mur, ou
    plusieurs sources, changeraient la comparaison.
-3. **Extérieur à température fixe** : en canicule, l'extérieur est plus chaud que
+5. **Extérieur à température fixe** : en canicule, l'extérieur est plus chaud que
    l'intérieur, et la fractale ferait entrer plus de chaleur. Étape naturelle : un
-   cycle jour/nuit, où le bilan dépend de l'inertie des murs.
-4. **Mur non isolé** : avec un isolant, la résistance du mur domine et le rôle de la
-   forme change. Variante à tester (béton + 10 cm d'isolant).
-5. **Contrôle** : comparer la fractale à une forme non fractale de même périmètre
-   (carré crénelé), pour savoir si c'est la fractale qui compte ou seulement la
-   longueur du mur.
-6. **Passage en 3D** (prévu) : une vraie pièce avec sol et plafond, où l'air chaud
-   monte, ou une fractale en volume. Le modèle 2D actuel sert de base.
+   cycle jour/nuit, avec le soleil et l'ombre que la façade se fait à elle-même.
+6. **Mur non isolé** : avec un isolant, la résistance du mur domine et le rôle de la
+   forme change.
+7. **3D** : tant que seule la diffusion est modélisée, une pièce extrudée revient au
+   modèle 2D plus des constantes (sol, plafond). La 3D ne deviendra utile qu'avec la
+   convection naturelle ou une fractale en volume.

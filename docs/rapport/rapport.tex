@@ -1069,6 +1069,99 @@ périmètre intérieur (à droite). La ligne pointillée est le carré.}
   donc les pointes : le gain réel dépend du brassage de l'air.
 \end{itemize}
 
+\subsection{Loi de la profondeur optimale}\label{sec-loi}
+
+L'optimum à la profondeur 3 dépend du mur de \qty{20}{\centi\metre}. Pour en tirer une
+loi, on a calculé le régime établi de pièces de \qty{36}{\square\metre} pour 21
+épaisseurs de mur, de 5 à \qty{45}{\centi\metre} (les murs réels). Deux familles de formes servent de témoins
+(\cref{fig-temoins-formes}) :
+\begin{itemize}
+  \item le \textbf{carré crénelé} de profondeur $n$ a le même périmètre que le flocon
+  de profondeur $n$, mais une seule taille de détail : il dit si c'est la fractale qui
+  compte, ou seulement la longueur du mur ;
+  \item l'\textbf{île de Minkowski}, une autre fractale, dont chaque segment est
+  remplacé par 8 segments quatre fois plus petits (dimension $3/2$, contre
+  $\log 4/\log 3\approx 1,26$ pour Koch).
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{temoins_formes.png}
+\caption{Formes témoins, à \qty{36}{\square\metre} : carrés crénelés de même périmètre
+que les flocons, et îles de Minkowski.}
+\label{fig-temoins-formes}
+\end{figure}
+
+\paragraph{La profondeur optimale baisse quand le mur s'épaissit.}
+\Cref{fig-loi-epaisseur} donne $G/G_{\text{carré}}$ en fonction de l'épaisseur. Pour
+le flocon de \qty{36}{\square\metre}, la profondeur optimale vaut 4 jusqu'à
+\qty{7}{\centi\metre}, 3 de 8 à \qty{22}{\centi\metre}, puis 2 jusqu'à
+\qty{45}{\centi\metre}. Chaque courbe chute peu avant l'épaisseur égale à la taille
+$\ell_n$ de ses détails (traits pointillés) : le mur, qui suit le contour vers
+l'extérieur, comble alors les creux les plus fins.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{loi_epaisseur.png}
+\caption{Conductance relative au carré en fonction de l'épaisseur du mur
+(\qty{36}{\square\metre}). Traits pointillés : taille $\ell_n$ des détails de la
+profondeur $n$.}
+\label{fig-loi-epaisseur}
+\end{figure}
+
+\paragraph{Le seuil suit la taille des détails.} Notons $e_c(n)$ l'épaisseur
+au-delà de laquelle la profondeur $n$ cesse de battre la profondeur $n-1$
+(interpolée entre deux épaisseurs calculées). Pour le flocon, $e_c/\ell_n$ vaut
+0,85 à la profondeur 3 ($\ell_3=\qty{27}{\centi\metre}$, $e_c=\qty{23}{\centi\metre}$)
+et 0,87 à la profondeur 4 ($\ell_4=\qty{9}{\centi\metre}$, $e_c=\qty{7,8}{\centi\metre}$) ;
+pour l'île de Minkowski, 0,60 et 0,73 (\cref{fig-loi-seuils}). Un niveau de détail
+sert donc tant que le mur est sensiblement plus fin que lui. Ces quatre seuils, à une
+seule aire, suffisent à dégager la tendance, pas à fixer la constante avec
+précision.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.6\linewidth]{loi_seuils.png}
+\caption{Épaisseur seuil $e_c$ en fonction de la taille $\ell$ des détails ajoutés,
+pour les deux fractales (\qty{36}{\square\metre}).}
+\label{fig-loi-seuils}
+\end{figure}
+
+On en déduit une règle simple. La profondeur $n$ est utile tant que
+$\ell_n = s/3^n > e/0,86$, d'où la profondeur optimale du flocon
+\begin{equation}
+  n_{\text{opt}} = \left\lfloor \log_3 \frac{0,86\, s}{e} \right\rfloor ,
+\end{equation}
+qui affine l'estimation $n_{\max}\approx\log_3(s/e)$ de la \cref{sec-nmax}. Pour
+$s\approx\qty{7,3}{\metre}$, elle redonne les plages ci-dessus : 4 jusqu'à
+\qty{7}{\centi\metre}, 3 jusqu'à \qty{23}{\centi\metre}, 2 au-delà.
+
+\paragraph{Ce n'est pas la longueur du mur qui compte.} À \qty{20}{\centi\metre}
+(\cref{fig-temoins}), le carré crénelé égale le flocon tant que ses créneaux sont plus
+larges que le mur (+\qty{24}{\percent} et +\qty{44}{\percent} aux profondeurs 1 et 2,
+contre +\qty{26}{\percent} et +\qty{49}{\percent}), puis s'effondre d'un coup
+(+\qty{6}{\percent} à la profondeur 3, contre +\qty{66}{\percent} pour le flocon) : ses
+créneaux de \qty{30}{\centi\metre} laissent des fentes que le mur bouche entièrement.
+Le flocon, lui, garde ses niveaux plus grossiers quand le mur bouche le plus fin : il
+se dégrade progressivement. L'avantage de la fractale tient à cette
+\emph{robustesse sur plusieurs échelles}, pas à la longueur de son contour. L'île de
+Minkowski fait mieux encore (+\qty{107}{\percent} à la profondeur 2) : à périmètre
+donné, ses détails restent plus larges.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{temoins.png}
+\caption{Conductance des formes à \qty{36}{\square\metre} et mur de
+\qty{20}{\centi\metre}, en fonction du périmètre intérieur (à gauche) et de la
+surface extérieure du mur (à droite).}
+\label{fig-temoins}
+\end{figure}
+
+La grandeur qui ordonne toutes les formes est la \textbf{surface extérieure du mur}
+(\cref{fig-temoins}, à droite) : sur l'ensemble des calculs à
+\qty{36}{\square\metre}, la corrélation entre $\log G$ et le logarithme de la surface
+extérieure vaut 0,82, contre 0,46 avec le périmètre intérieur.
+
 \subsection{Évolution dans le temps}
 
 \begin{figure}[H]
@@ -1114,25 +1207,36 @@ flocon, les pointes évacuent beaucoup et le fond des creux très peu.}
 % ===========================================================================
 
 \begin{enumerate}
+  \item \textbf{Échanges de surface uniformes.} C'est la limite principale. Les
+  résistances superficielles $\Rsi$ et $\Rse$ sont celles d'un mur plan isolé, et
+  s'appliquent partout de la même façon. Dans les creux étroits d'une fractale, l'air
+  circule moins bien (convection plus faible) et les parois se font face : elles
+  échangent leur rayonnement entre elles plutôt qu'avec l'extérieur (facteurs de
+  forme). Ces deux effets pénalisent précisément les détails fins, et réduiraient le
+  gain de la fractale, peut-être fortement. Les modéliser (facteurs de forme pour le
+  rayonnement, coefficient de convection selon l'ouverture des creux) est la
+  prochaine étape.
   \item \textbf{Conductivité effective de l'air.} La convection est représentée par
-  une diffusion. $\la$ fixe la répartition de la chaleur dans la pièce et pèse sur le
-  gain de la fractale ; une étude de sensibilité est nécessaire.
+  une diffusion de conductivité $\la$, dont la valeur n'est qu'un ordre de grandeur ;
+  sa valeur fixe la résistance de l'air entre la source et les pointes, et une
+  étude de sensibilité reste à faire.
+  \item \textbf{Une seule aire.} La loi de l'optimum (\cref{sec-loi}) est établie à
+  \qty{36}{\square\metre}. La vérifier à d'autres aires dirait si le rapport
+  $e_c/\ell_n$ est universel.
   \item \textbf{Position de la source.} Une source près d'un mur, ou plusieurs sources
   (occupants), modifieraient la comparaison.
   \item \textbf{Extérieur à température fixe.} En canicule, l'extérieur est plus chaud
   que l'intérieur, et la fractale ferait entrer plus de chaleur. Un cycle jour/nuit,
-  où le bilan dépend de l'inertie des murs, est l'étape naturelle pour la question
-  climatique.
+  avec le soleil et l'ombre que la façade se fait à elle-même, est l'étape naturelle
+  pour la question climatique.
   \item \textbf{Mur non isolé.} Avec un isolant, la résistance du mur domine et le rôle
   de la forme change.
-  \item \textbf{Contrôle.} Comparer la fractale à une forme non fractale de même
-  périmètre (carré crénelé) dirait si c'est la fractale qui compte, ou seulement la
-  longueur du mur.
-  \item \textbf{Passage en trois dimensions.} Une vraie pièce, avec sol et plafond, où
-  l'air chaud monte, ou une fractale en volume (surface de Koch, éponge de Menger).
-  Les méthodes se transposent : les directions alternées deviennent trois passes de
-  systèmes tridiagonaux, et le gradient conjugué reste valable, pour $N = N_g^3$
-  inconnues.
+  \item \textbf{Trois dimensions.} Tant que seule la diffusion est modélisée, une pièce
+  extrudée en 3D revient au modèle 2D plus des constantes (sol, plafond). La 3D ne
+  devient utile qu'avec la convection naturelle (l'air chaud monte) ou une fractale en
+  volume (surface de Koch, éponge de Menger). Les méthodes se transposent : les
+  directions alternées deviennent trois passes de systèmes tridiagonaux, et le
+  gradient conjugué reste valable, pour $N = N_g^3$ inconnues.
 \end{enumerate}
 
 % ===========================================================================
@@ -1145,15 +1249,19 @@ la profondeur 3, soit \qty{4}{\degreeCelsius} de moins dans la pièce. Le gain n
 pas proportionnel à l'allongement du mur, et il s'inverse à la profondeur 4 : quand les
 détails deviennent plus fins que l'épaisseur du mur, celui-ci les bouche. Une fractale
 « réelle » est toujours tronquée, et son intérêt thermique a un optimum fixé par la
-matière qui la constitue.
+matière qui la constitue : un niveau de détail sert tant que le mur reste plus fin
+qu'environ \qty{86}{\percent} de sa taille. Un carré crénelé de même périmètre
+s'effondre dès que le mur bouche ses créneaux, alors que la fractale se dégrade
+progressivement : son avantage tient à ses détails à plusieurs échelles, pas à la
+longueur de son contour.
 
 Sur le plan méthodologique, le projet montre l'intérêt de valider un modèle avant de
 l'exploiter : chaque test confronté à une solution exacte ou à un raffinement de
 maillage a révélé un défaut que la simulation, visuellement convaincante, ne laissait
 pas soupçonner. Le modèle actuel est conservatif, validé à moins de \qty{1}{\percent},
 et ses résultats sont indépendants de la grille à environ \qty{1}{\percent} près. Il
-constitue une base solide pour les étapes suivantes : sensibilité au brassage de
-l'air, cycle jour/nuit et passage en trois dimensions.
+constitue une base solide pour les étapes suivantes : échanges de surface dans les
+creux (rayonnement, convection), sensibilité au brassage de l'air et cycle jour/nuit.
 
 \begin{thebibliography}{99}
 \bibitem{douglas1956} J.~Douglas, H.~H.~Rachford, « On the numerical solution of heat
@@ -1224,8 +1332,9 @@ make run                          # fenetre interactive
 make test                         # validation (solution exacte, 3 resolutions)
 make data                         # courbes dans le temps (res_*.csv)
 make regime                       # regime etabli sur grille fine (regime_*.csv)
-make plot                         # graphiques
-python3 docs/rapport/figures/generer_figures.py   # figures du rapport
+make loi                          # loi de l'optimum (epaisseurs, aires, temoins)
+make figures                      # figures du rapport
+make gif                          # animation de la fenetre (ffmpeg)
 make rapport                      # ce document
 \end{lstlisting}
 

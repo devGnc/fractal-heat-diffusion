@@ -130,13 +130,16 @@ static void usage(const char *prog) {
             "  %s --capture <image.bmp> [profondeur] [vue] [heures]\n"
             "      image de la fenêtre sans l'ouvrir (vue : temp ou flux ;\n"
             "      défaut : profondeur 3, temp, 168 h)\n"
+            "  %s --film [profondeur] [images] | ffmpeg ...\n"
+            "      images brutes BGRA %dx%d sur la sortie standard (voir make gif ;\n"
+            "      défaut : profondeur 3, 200 images)\n"
             "  geometrie : carre, koch0 ... koch%d (fractal = koch%d),\n"
             "              creneau1 ... creneau%d (témoin non fractal du flocon de même profondeur),\n"
             "              minkowski1 ... minkowski%d\n"
             "  options (--headless, --regime) :\n"
             "      --epaisseur <m>  épaisseur du mur (défaut %g m)\n"
             "      --aire <m²>      aire intérieure de la pièce (défaut %g m²)\n",
-            prog, prog, prog, prog, KOCH_DEPTH_MAX, KOCH_DEPTH_REF, CRENEAU_MAX,
+            prog, prog, prog, prog, prog, WIN_W, WIN_H, KOCH_DEPTH_MAX, KOCH_DEPTH_REF, CRENEAU_MAX,
             MINKOWSKI_MAX, WALL_THICKNESS, ROOM_AREA);
 }
 
@@ -171,6 +174,15 @@ int main(int argc, char **argv) {
             return 1;
         }
         return capture_gui(argv[2], depth, view, hours);
+    }
+    if (strcmp(argv[1], "--film") == 0 && argc <= 4) {
+        int depth = argc >= 3 ? atoi(argv[2]) : KOCH_DEPTH_REF + 1;
+        int frames = argc >= 4 ? atoi(argv[3]) : 200;
+        if (depth < 0 || depth > KOCH_DEPTH_MAX || frames < 1) {
+            usage(argv[0]);
+            return 1;
+        }
+        return film_gui(depth, frames);
     }
 
     double wall = WALL_THICKNESS, area = ROOM_AREA;

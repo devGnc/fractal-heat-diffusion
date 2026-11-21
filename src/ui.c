@@ -5,6 +5,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
+#include <unistd.h>
 
 /*
  * Fenêtre interactive : le carré et un flocon de Koch, de même aire et avec la
@@ -23,8 +24,6 @@
  * physiques (facteur ui.dpi) pour rester net.
  */
 
-#define WIN_W 1400
-#define WIN_H 780
 #define MARGIN 20
 #define PANEL 670
 #define STRIP_Y (MARGIN + PANEL)
@@ -410,6 +409,50 @@ int capture_gui(const char *path, int depth, int view, double hours) {
     int ok = SDL_SaveBMP(surf, path) == 0;
     if (!ok) fprintf(stderr, "Enregistrement de %s : %s\n", path, SDL_GetError());
     else printf("Image enregistrée : %s (t = %g h)\n", path, hours);
+    app_free(&app);
+    SDL_DestroyRenderer(ren);
+    SDL_FreeSurface(surf);
+    return !ok;
+}
+
+// Film de la fenêtre sans l'ouvrir : `frames` images brutes (BGRA, WIN_W × WIN_H,
+// échelle 1) écrites sur la sortie standard, à envoyer à ffmpeg (make gif).
+// Le temps simulé par image croît de 5 % de t (au moins 5 s) : quelques
+// minutes pour voir la chaleur quitter la source, puis une semaine en
+// quelques secondes de film.
+int film_gui(int depth, int frames) {
+    SDL_Surface *surf = SDL_CreateRGBSurfaceWithFormat(0, WIN_W, WIN_H, 32,
+                                                       SDL_PIXELFORMAT_ARGB8888);
+    SDL_Renderer *ren = surf ? SDL_CreateSoftwareRenderer(surf) : NULL;
+    if (!ren) {
+        fprintf(stderr, "Rendu logiciel : %s\n", SDL_GetError());
+        return 1;
+    }
+    // Les images partent sur la sortie standard d'origine ; les messages de la
+    // simulation (printf) sont renvoyés vers l'erreur standard.
+    FILE *out = fdopen(dup(STDOUT_FILENO), "wb");
+    if (!out || dup2(STDERR_FILENO, STDOUT_FILENO) < 0) {
+        perror("Sortie standard");
+        return 1;
+    }
+    ui.dpi = 1.0;
+    static App app;
+    if (!app_init(&app, ren, depth)) return 1;
+    int ok = 1;
+    for (int k = 0; k < frames && ok; k++) {
+        if (k > 0) {
+            double span = 0.05 * app.rooms[0].sim.sim_time;
+            advance(&app, span < 5.0 ? 5.0 : span);
+        }
+        draw_frame(&app);
+        SDL_RenderPresent(ren);
+        for (int y = 0; y < WIN_H && ok; y++)
+            ok = fwrite((char *)surf->pixels + (size_t)y * surf->pitch, 4, WIN_W, out)
+                 == (size_t)WIN_W;
+    }
+    if (fclose(out) != 0) ok = 0;
+    fprintf(stderr, "%s : t = %.1f h\n", ok ? "Film terminé" : "Écriture interrompue",
+            app.rooms[0].sim.sim_time / 3600.0);
     app_free(&app);
     SDL_DestroyRenderer(ren);
     SDL_FreeSurface(surf);

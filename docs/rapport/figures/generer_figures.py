@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker
 
 OUT = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.dirname(os.path.dirname(OUT))
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(OUT)))
 sys.path.insert(0, os.path.join(REPO, "scripts"))
 import formes  # noqa: E402  (mêmes constructions que src/geometry.c)
 

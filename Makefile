@@ -17,7 +17,7 @@ HDR = $(wildcard $(SRCDIR)/*.h)
 # Fichiers objets (dans build/)
 OBJ = $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.o,$(SRC))
 
-.PHONY: all clean run plot data regime loi test rapport
+.PHONY: all clean run plot data regime loi test rapport gif figures
 
 all: $(TARGET)
 
@@ -49,12 +49,22 @@ $(FINE): $(SRC) $(HDR) | $(BUILDDIR)
 regime: $(FINE)
 	@for g in $(GEOMETRIES); do ./$(FINE) --regime $$g || exit 1; done
 
-# Loi de la profondeur optimale : régime établi sur la grille fine pour 27
-# épaisseurs de mur et 3 aires, flocons, carrés crénelés et îles de Minkowski
-# (≈ 800 calculs, une heure environ). Complète results/v4/loi/loi.csv et
-# reprend là où il s'était arrêté.
+# Loi de la profondeur optimale : régime établi sur la grille fine pour 21
+# épaisseurs de mur (5 à 45 cm), 36 m², flocons, carrés crénelés et îles de
+# Minkowski (273 calculs, tous présents dans results/v4/loi/loi.csv : la cible
+# ne recalcule que ce qui manque).
 loi: $(FINE)
 	python3 scripts/balayage.py
+
+# Animation du README : la fenêtre filmée sans l'ouvrir (une semaine simulée,
+# ≈ 1 min), encodée par ffmpeg avec une palette optimisée.
+GIF = docs/captures/diffusion.gif
+gif: $(TARGET)
+	./$(TARGET) --film 3 200 | ffmpeg -loglevel error -y -f rawvideo -pixel_format bgra \
+		-video_size 1400x780 -framerate 20 -i - -vf "tpad=stop_mode=clone:stop_duration=2,\
+		scale=840:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];\
+		[b][p]paletteuse=dither=bayer:bayer_scale=4" $(GIF)
+	@ls -lh $(GIF)
 
 plot:
 	python3 scripts/analyse.py
@@ -73,6 +83,10 @@ test: | $(BUILDDIR)
 	@printf "%-12s %s %4s %9s %9s %9s %9s %8s %10s %8s\n" \
 		cas s grille T_air T_exacte G_simul G_exact "err_G_%" "bilan_%" Iter
 	@for s in $(SCALES); do ./$(BUILDDIR)/test_anneau_s$$s || exit 1; done
+
+# Figures du rapport et du README (docs/rapport/figures/), à partir de results/v4
+figures:
+	python3 docs/rapport/figures/generer_figures.py
 
 # Rapport LaTeX (docs/rapport/rapport.pdf)
 rapport:

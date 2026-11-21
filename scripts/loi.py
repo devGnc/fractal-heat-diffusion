@@ -79,15 +79,16 @@ for ax, famille, titre in ((axes[0], "koch", "Flocon de Koch"),
         ax.plot(t.index * 100, t[n] / sq.xs(36.0, level="aire_m2").reindex(t.index),
                 "o-", ms=3, color=c, label=f"profondeur {n}")
         ell = formes.detail(famille, n, 36.0)
-        if n >= 1 and ell <= 1.0:
+        if n >= 1 and ell <= 0.5:
             ax.axvline(ell * 100, color=c, ls=":", lw=1.2)
             ax.annotate(f"ℓ{n} = {ell * 100:.0f} cm".replace(".", ","),
                         (ell * 100, 0.98), xycoords=("data", "axes fraction"),
                         rotation=90, va="top", ha="right", fontsize=8, color=c)
     ax.axhline(1, color="k", ls="--", lw=1)
     ax.set_xscale("log")
-    ax.set_xticks([5, 10, 20, 30, 50, 100])
-    ax.set_xticklabels(["5", "10", "20", "30", "50", "100"])
+    ax.set_xlim(4.5, 50)
+    ax.set_xticks([5, 10, 20, 30, 45])
+    ax.set_xticklabels(["5", "10", "20", "30", "45"])
     ax.set_xlabel("Épaisseur du mur e (cm)")
     ax.set_title(f"{titre}, 36 m²")
     ax.grid(True, which="both", ls="--", alpha=0.4)
@@ -143,7 +144,7 @@ print(ref.sort_values(["famille", "profondeur"])[
     ["geometrie", "perimetre_m", "detail_m", "surface_ext_m", "T_air", "G", "G_rel"]
 ].round(3).to_string(index=False), "\n")
 
-styles = {"carre": ("ks", "Carré"), "koch": ("o-", "Flocon de Koch"),
+styles = {"carre": ("s", "Carré"), "koch": ("o-", "Flocon de Koch"),
           "creneau": ("D--", "Carré crénelé (même périmètre que Koch n)"),
           "minkowski": ("^-", "Île de Minkowski")}
 pal = {"carre": "k", "koch": "tab:red", "creneau": "tab:gray", "minkowski": "tab:blue"}

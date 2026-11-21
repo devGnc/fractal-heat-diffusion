@@ -166,8 +166,11 @@ SDL_Color temp_color(double T);
 SDL_Color flux_color(double q);
 void fill_pixels(Sim *s, int view);
 
-// Fenêtre interactive (ui.c)
+// Fenêtre interactive (ui.c), taille en points
+#define WIN_W 1400
+#define WIN_H 780
 int run_gui(void);
 int capture_gui(const char *path, int depth, int view, double hours);
+int film_gui(int depth, int frames);
 
 #endif
